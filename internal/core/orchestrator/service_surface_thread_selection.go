@@ -668,6 +668,20 @@ func NoticeForSurfaceResumeFailure(code string) *control.Notice {
 	return surfaceResumeFailureNotice(code)
 }
 
+// NoticeForSurfaceResumeGiveUp is the single hand-off notice emitted once a
+// headless/workspace surface has exhausted its auto-recovery retry budget. It
+// tells the user that auto-recovery has stopped and they should reselect a
+// target manually.
+func NoticeForSurfaceResumeGiveUp() *control.Notice {
+	notice := globalRuntimeNotice(
+		control.NoticeDeliveryFamilySurfaceResume,
+		"surface_resume_give_up",
+		"已停止自动恢复",
+		"多次尝试恢复之前会话都失败（目标可能仍被其他飞书会话占用），已停止自动重试。请发送 /list 重新选择工作区，或 /use 选择其他会话。",
+	)
+	return &notice
+}
+
 func vscodeSurfaceResumeFailureNotice(code string) *control.Notice {
 	switch strings.TrimSpace(code) {
 	case "instance_busy":
@@ -681,6 +695,18 @@ func vscodeSurfaceResumeFailureNotice(code string) *control.Notice {
 
 func NoticeForVSCodeSurfaceResumeFailure(code string) *control.Notice {
 	return vscodeSurfaceResumeFailureNotice(code)
+}
+
+// NoticeForVSCodeSurfaceResumeGiveUp is the single hand-off notice emitted once
+// a VS Code surface has exhausted its auto-recovery retry budget.
+func NoticeForVSCodeSurfaceResumeGiveUp() *control.Notice {
+	notice := globalRuntimeNotice(
+		control.NoticeDeliveryFamilyVSCodeResume,
+		"vscode_resume_give_up",
+		"已停止自动恢复",
+		"多次尝试恢复之前的 VS Code 实例都失败（实例可能仍被其他飞书会话接管），已停止自动重试。请发送 /list 重新选择实例。",
+	)
+	return &notice
 }
 
 func NoticeForVSCodeOpenPrompt(hadPreviousInstance bool) *control.Notice {

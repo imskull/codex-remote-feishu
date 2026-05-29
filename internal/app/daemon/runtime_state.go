@@ -16,6 +16,11 @@ type surfaceResumeRecoveryState struct {
 	NextAttemptAt   time.Time
 	LastAttemptAt   time.Time
 	LastFailureCode string
+	// FailureCount tracks how many consecutive attempts have failed with the
+	// same LastFailureCode. Once it reaches surfaceResumeMaxFailedAttempts the
+	// surface gives up auto-recovery and stops polling until its resume target
+	// changes (or the daemon restarts).
+	FailureCount int
 }
 
 type vscodeMigrationFlowRecord struct {

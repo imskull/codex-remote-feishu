@@ -27,6 +27,14 @@ type surfaceResumeTarget struct {
 
 const surfaceResumeRetryBackoff = 30 * time.Second
 
+// surfaceResumeMaxFailedAttempts bounds how many consecutive same-code failures
+// a surface tolerates before it gives up auto-recovery. A permanently
+// unavailable target (e.g. the previous thread/workspace/instance is held by
+// another feishu window that never releases it) would otherwise be polled
+// every surfaceResumeRetryBackoff forever; after this many tries we emit one
+// final "switch manually" notice and stop.
+const surfaceResumeMaxFailedAttempts = 3
+
 func (a *App) configureSurfaceResumeStateLocked(stateDir string) {
 	path := surfaceresume.StatePath(stateDir)
 	store, err := surfaceresume.LoadStore(path)
@@ -446,6 +454,11 @@ func (a *App) maybeRecoverHeadlessSurfacesLocked(now time.Time) []eventcontract.
 		if !recovery.NextAttemptAt.IsZero() && now.Before(recovery.NextAttemptAt) {
 			continue
 		}
+		if recovery.FailureCount >= surfaceResumeMaxFailedAttempts {
+			// Already gave up on this target; stay quiet until the resume
+			// target changes (re-arms the recovery state) or the daemon restarts.
+			continue
+		}
 		if recovery.Entry.ResumeHeadless && a.shouldDeferHeadlessResumeUntilInitialRefreshLocked(recovery.Entry, allowMissingTargetFailure) {
 			continue
 		}
@@ -465,7 +478,27 @@ func (a *App) maybeRecoverHeadlessSurfacesLocked(now time.Time) []eventcontract.
 			events = append(events, restoreEvents...)
 			updatedSurfaceIDs = append(updatedSurfaceIDs, surfaceID)
 		case orchestrator.SurfaceResumeStatusFailed:
+			// A retry that keeps failing with the same code must stay quiet: the
+			// failure notice is sent once, then the surface sits in backoff (see
+			// remote-surface-state-machine.md §7/§9). After
+			// surfaceResumeMaxFailedAttempts same-code failures we give up so a
+			// permanently-busy target (e.g. thread_busy because another feishu
+			// window owns it) does not get polled forever.
+			repeatFailure, gaveUp := noteSurfaceResumeFailure(recovery, result.FailureCode)
 			a.setSurfaceResumeBackoffLocked(surfaceID, result.FailureCode, now)
+			if gaveUp {
+				if notice := orchestrator.NoticeForSurfaceResumeGiveUp(); notice != nil {
+					events = append(events, eventcontract.Event{
+						Kind:             eventcontract.KindNotice,
+						SurfaceSessionID: surfaceID,
+						Notice:           notice,
+					})
+				}
+				continue
+			}
+			if repeatFailure {
+				continue
+			}
 			events = append(events, restoreEvents...)
 			if recovery.Entry.ResumeHeadless {
 				continue
@@ -504,6 +537,11 @@ func (a *App) maybeRecoverVSCodeSurfacesLocked(now time.Time) []eventcontract.Ev
 		if !recovery.NextAttemptAt.IsZero() && now.Before(recovery.NextAttemptAt) {
 			continue
 		}
+		if recovery.FailureCount >= surfaceResumeMaxFailedAttempts {
+			// Already gave up on this instance; stay quiet until the resume
+			// target changes (re-arms the recovery state) or the daemon restarts.
+			continue
+		}
 		restoreEvents, result := a.service.TryAutoResumeVSCodeSurface(surfaceID, recovery.Entry.ResumeInstanceID)
 		switch result.Status {
 		case orchestrator.SurfaceResumeStatusInstanceAttached:
@@ -511,7 +549,21 @@ func (a *App) maybeRecoverVSCodeSurfacesLocked(now time.Time) []eventcontract.Ev
 			events = append(events, restoreEvents...)
 			updatedSurfaceIDs = append(updatedSurfaceIDs, surfaceID)
 		case orchestrator.SurfaceResumeStatusFailed:
+			repeatFailure, gaveUp := noteSurfaceResumeFailure(recovery, result.FailureCode)
 			a.setSurfaceResumeBackoffLocked(surfaceID, result.FailureCode, now)
+			if gaveUp {
+				if notice := orchestrator.NoticeForVSCodeSurfaceResumeGiveUp(); notice != nil {
+					events = append(events, eventcontract.Event{
+						Kind:             eventcontract.KindNotice,
+						SurfaceSessionID: surfaceID,
+						Notice:           notice,
+					})
+				}
+				continue
+			}
+			if repeatFailure {
+				continue
+			}
 			notice := orchestrator.NoticeForVSCodeSurfaceResumeFailure(result.FailureCode)
 			if notice != nil {
 				events = append(events, eventcontract.Event{
@@ -605,6 +657,44 @@ func (a *App) clearSurfaceResumeBackoffLocked(surfaceID string) {
 	recovery.NextAttemptAt = time.Time{}
 	recovery.LastAttemptAt = time.Time{}
 	recovery.LastFailureCode = ""
+	recovery.FailureCount = 0
+}
+
+// surfaceResumeFailureAlreadyReported reports whether this recovery surface has
+// already emitted a failure notice for the same failure code on a previous
+// attempt. It must be called before setSurfaceResumeBackoffLocked overwrites the
+// stored LastFailureCode. A different code (e.g. thread_busy -> thread_not_found)
+// or a success in between (which clears LastFailureCode) re-arms the notice.
+func surfaceResumeFailureAlreadyReported(recovery *surfaceResumeRecoveryState, code string) bool {
+	if recovery == nil {
+		return false
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false
+	}
+	return strings.TrimSpace(recovery.LastFailureCode) == code
+}
+
+// noteSurfaceResumeFailure records a failed resume attempt on the recovery
+// state and reports whether the same failure was already announced (so the
+// per-episode notice can be suppressed) and whether the surface has now
+// exhausted its retry budget (so auto-recovery should stop and emit a final
+// hand-off notice). It must run before setSurfaceResumeBackoffLocked overwrites
+// LastFailureCode. The counter is kept here rather than inside
+// setSurfaceResumeBackoffLocked so the redundant backoff refresh in
+// recordManagedHeadlessResumeOutcomeEventsLocked cannot double-count an attempt.
+func noteSurfaceResumeFailure(recovery *surfaceResumeRecoveryState, code string) (repeat, gaveUp bool) {
+	if recovery == nil {
+		return false, false
+	}
+	repeat = surfaceResumeFailureAlreadyReported(recovery, code)
+	if repeat {
+		recovery.FailureCount++
+	} else {
+		recovery.FailureCount = 1
+	}
+	return repeat, recovery.FailureCount >= surfaceResumeMaxFailedAttempts
 }
 
 func (a *App) setSurfaceResumeBackoffLocked(surfaceID, code string, now time.Time) {

@@ -1452,6 +1452,88 @@ func TestDaemonNormalResumeFailureEmitsNoticeAfterFirstRefresh(t *testing.T) {
 	}
 }
 
+func TestDaemonResumeBusyGivesUpAfterRetryBudget(t *testing.T) {
+	t.Parallel()
+
+	stateDir := t.TempDir()
+	for _, surfaceID := range []string{"surface-1", "surface-2"} {
+		putSurfaceResumeStateForTest(t, stateDir, surfaceresume.Entry{
+			SurfaceSessionID:   surfaceID,
+			GatewayID:          "app-1",
+			ChatID:             "chat-" + surfaceID,
+			ActorUserID:        "user-1",
+			ProductMode:        "vscode",
+			ResumeInstanceID:   "inst-vscode-1",
+			ResumeThreadID:     "thread-1",
+			ResumeWorkspaceKey: "/data/dl/droid",
+			ResumeRouteMode:    "follow_local",
+		})
+	}
+
+	gateway := newLifecycleGateway()
+	app := New(":0", ":0", gateway, agentproto.ServerIdentity{})
+	app.SetHeadlessRuntime(HeadlessRuntimeConfig{
+		IdleTTL:    time.Hour,
+		KillGrace:  time.Second,
+		Paths:      relayruntime.Paths{StateDir: stateDir},
+		BinaryPath: "codex",
+	})
+	app.sendAgentCommand = func(string, agentproto.Command) error { return nil }
+	app.startHeadless = func(relayruntime.HeadlessLaunchOptions) (int, error) { return 1, nil }
+
+	// Exactly one VS Code instance is online, so only one surface can claim it;
+	// the other surface keeps resolving to a permanent instance_busy failure.
+	seedVSCodeResumeInstance(app, "inst-vscode-1", "thread-1")
+	// Mark VS Code compatibility as already checked so recovery isn't deferred
+	// behind the async compatibility probe (which never resolves under test).
+	app.setCachedVSCodeCompatibilityIssueLocked(nil)
+
+	ctx := context.Background()
+	base := time.Now().UTC()
+
+	noticeCount := func(title string) int {
+		count := 0
+		for _, op := range gateway.snapshotOperations() {
+			if op.SurfaceSessionID == "surface-2" && op.CardTitle == title {
+				count++
+			}
+		}
+		return count
+	}
+
+	app.onTick(ctx, base)
+
+	if snapshot := app.service.SurfaceSnapshot("surface-1"); snapshot == nil || snapshot.Attachment.InstanceID != "inst-vscode-1" {
+		t.Fatalf("expected surface-1 to win the instance claim, got %#v", snapshot)
+	}
+	if got := noticeCount("恢复失败"); got != 1 {
+		t.Fatalf("expected exactly one busy failure notice on first attempt, got %d", got)
+	}
+
+	// Drive recovery ticks past the backoff window. The busy condition never
+	// clears, so after surfaceResumeMaxFailedAttempts the surface must give up:
+	// the busy notice stays one-shot, exactly one give-up notice is emitted,
+	// and further ticks stay silent.
+	for i := 1; i <= surfaceResumeMaxFailedAttempts+3; i++ {
+		app.onTick(ctx, base.Add(time.Duration(i)*(surfaceResumeRetryBackoff+time.Second)))
+	}
+
+	if got := noticeCount("恢复失败"); got != 1 {
+		t.Fatalf("expected busy failure notice to stay one-shot across retries, got %d", got)
+	}
+	if got := noticeCount("已停止自动恢复"); got != 1 {
+		t.Fatalf("expected exactly one give-up notice after exhausting retries, got %d", got)
+	}
+
+	recovery := app.surfaceResumeRuntime.recovery["surface-2"]
+	if recovery == nil {
+		t.Fatal("expected surface-2 recovery state to remain (gave up, not retrying)")
+	}
+	if recovery.FailureCount < surfaceResumeMaxFailedAttempts {
+		t.Fatalf("expected surface-2 to have exhausted its retry budget, got FailureCount=%d", recovery.FailureCount)
+	}
+}
+
 func seedVSCodeResumeInstance(app *App, instanceID, threadID string) {
 	app.service.UpsertInstance(&state.InstanceRecord{
 		InstanceID:              instanceID,

@@ -69,7 +69,6 @@ func (a *App) buildClaudeChildLaunch(resume *claudeLaunchResumeTarget) ([]string
 		"--include-partial-messages",
 		"--replay-user-messages",
 		"--verbose",
-		"--dangerously-skip-permissions",
 		"--allow-dangerously-skip-permissions",
 		"--permission-prompt-tool", "stdio",
 	}

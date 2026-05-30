@@ -13,6 +13,7 @@ import (
 	"github.com/kxn/codex-remote-feishu/internal/app/daemon/surfaceresume"
 	"github.com/kxn/codex-remote-feishu/internal/core/agentproto"
 	"github.com/kxn/codex-remote-feishu/internal/core/control"
+	"github.com/kxn/codex-remote-feishu/internal/core/eventcontract"
 	"github.com/kxn/codex-remote-feishu/internal/core/orchestrator"
 	"github.com/kxn/codex-remote-feishu/internal/core/state"
 	relayruntime "github.com/kxn/codex-remote-feishu/internal/runtime"
@@ -1531,6 +1532,49 @@ func TestDaemonResumeBusyGivesUpAfterRetryBudget(t *testing.T) {
 	}
 	if recovery.FailureCount < surfaceResumeMaxFailedAttempts {
 		t.Fatalf("expected surface-2 to have exhausted its retry budget, got FailureCount=%d", recovery.FailureCount)
+	}
+}
+
+// TestHeadlessResumeFailureCountSurvivesNoticeCodeWriteback guards the headless
+// feishu path that the VS Code give-up test does not exercise. On every headless
+// resume tick the recovery loop records the raw FailureCode ("thread_busy") and
+// recordManagedHeadlessResumeOutcomeEventsLocked then re-records the same failure
+// from the bundled notice whose Code is the "headless_restore_"-prefixed form.
+// Before the canonicalization fix the two writes disagreed, so noteSurfaceResumeFailure
+// never saw a repeat: FailureCount reset to 1 every tick and the surface never
+// gave up. This drives that exact two-write sequence across ticks and asserts the
+// counter accumulates to the give-up threshold.
+func TestHeadlessResumeFailureCountSurvivesNoticeCodeWriteback(t *testing.T) {
+	t.Parallel()
+
+	app := New(":0", ":0", &recordingGateway{}, agentproto.ServerIdentity{})
+	const surfaceID = "surface-1"
+	recovery := &surfaceResumeRecoveryState{
+		Entry: surfaceresume.Entry{SurfaceSessionID: surfaceID, ResumeHeadless: true},
+	}
+	app.surfaceResumeRuntime.recovery[surfaceID] = recovery
+
+	base := time.Now().UTC()
+	var gaveUp bool
+	for i := 0; i < surfaceResumeMaxFailedAttempts; i++ {
+		now := base.Add(time.Duration(i) * (surfaceResumeRetryBackoff + time.Second))
+		// 1) recovery loop: raw FailureCode from SurfaceResumeResult.
+		_, gaveUp = noteSurfaceResumeFailure(recovery, "thread_busy")
+		app.setSurfaceResumeBackoffLocked(surfaceID, "thread_busy", now)
+		// 2) app_ingress writeback: the headless restore notice carries the
+		// "headless_restore_"-prefixed form of the same failure.
+		app.recordManagedHeadlessResumeOutcomeEventsLocked([]eventcontract.Event{{
+			Kind:             eventcontract.KindNotice,
+			SurfaceSessionID: surfaceID,
+			Notice:           &control.Notice{Code: "headless_restore_thread_busy"},
+		}}, now)
+	}
+
+	if recovery.FailureCount != surfaceResumeMaxFailedAttempts {
+		t.Fatalf("expected FailureCount to accumulate to %d across same-code ticks, got %d", surfaceResumeMaxFailedAttempts, recovery.FailureCount)
+	}
+	if !gaveUp {
+		t.Fatalf("expected surface to give up after %d same-code failures", surfaceResumeMaxFailedAttempts)
 	}
 }
 

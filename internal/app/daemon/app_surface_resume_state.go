@@ -660,20 +660,35 @@ func (a *App) clearSurfaceResumeBackoffLocked(surfaceID string) {
 	recovery.FailureCount = 0
 }
 
+// canonicalSurfaceResumeFailureCode collapses the two namespaces a resume
+// failure code can arrive in into one. The recovery loop records the raw
+// SurfaceResumeResult.FailureCode (e.g. "thread_busy"), while
+// recordManagedHeadlessResumeOutcomeEventsLocked re-records the same failure
+// from the bundled notice whose Code is the "headless_restore_"-prefixed form
+// ("headless_restore_thread_busy"). Without this normalization the two writes
+// disagree on LastFailureCode, so surfaceResumeFailureAlreadyReported never sees
+// a repeat: FailureCount resets to 1 every tick, the per-episode notice is
+// re-sent forever, and the give-up threshold is never reached.
+func canonicalSurfaceResumeFailureCode(code string) string {
+	return strings.TrimPrefix(strings.TrimSpace(code), "headless_restore_")
+}
+
 // surfaceResumeFailureAlreadyReported reports whether this recovery surface has
 // already emitted a failure notice for the same failure code on a previous
 // attempt. It must be called before setSurfaceResumeBackoffLocked overwrites the
 // stored LastFailureCode. A different code (e.g. thread_busy -> thread_not_found)
 // or a success in between (which clears LastFailureCode) re-arms the notice.
+// Both sides are canonicalized so the raw and "headless_restore_"-prefixed forms
+// of the same failure compare equal.
 func surfaceResumeFailureAlreadyReported(recovery *surfaceResumeRecoveryState, code string) bool {
 	if recovery == nil {
 		return false
 	}
-	code = strings.TrimSpace(code)
+	code = canonicalSurfaceResumeFailureCode(code)
 	if code == "" {
 		return false
 	}
-	return strings.TrimSpace(recovery.LastFailureCode) == code
+	return canonicalSurfaceResumeFailureCode(recovery.LastFailureCode) == code
 }
 
 // noteSurfaceResumeFailure records a failed resume attempt on the recovery
@@ -704,7 +719,10 @@ func (a *App) setSurfaceResumeBackoffLocked(surfaceID, code string, now time.Tim
 	}
 	recovery.LastAttemptAt = now
 	recovery.NextAttemptAt = now.Add(surfaceResumeRetryBackoff)
-	recovery.LastFailureCode = strings.TrimSpace(code)
+	// Store the canonical form so the recovery loop's raw FailureCode and
+	// recordManagedHeadlessResumeOutcomeEventsLocked's "headless_restore_"-prefixed
+	// notice code agree on what counts as the same failure episode.
+	recovery.LastFailureCode = canonicalSurfaceResumeFailureCode(code)
 }
 
 func (a *App) shouldDeferHeadlessResumeUntilInitialRefreshLocked(entry surfaceresume.Entry, allowMissingTargetFailure bool) bool {

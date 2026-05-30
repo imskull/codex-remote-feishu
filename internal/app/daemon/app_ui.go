@@ -171,7 +171,11 @@ func (a *App) deliverUIEventWithContextMode(ctx context.Context, event eventcont
 	if receiveID == "" || receiveIDType == "" {
 		return nil
 	}
-	log.Printf("ui event: surface=%s chat=%s actor=%s kind=%s", event.SurfaceSessionID, chatID, actorUserID, event.Kind)
+	noticeCode := ""
+	if event.Notice != nil {
+		noticeCode = event.Notice.Code
+	}
+	log.Printf("ui event: surface=%s chat=%s actor=%s kind=%s notice=%s", event.SurfaceSessionID, chatID, actorUserID, event.Kind, noticeCode)
 	var (
 		previewReq previewpkg.FinalBlockPreviewRequest
 		previewErr error

@@ -500,7 +500,20 @@ func (s *Service) tryAutoResumeManagedHeadlessTarget(surface *state.SurfaceConso
 	target := s.resolveHeadlessRestoreTargetFromView(surface, view)
 	switch target.Mode {
 	case threadAttachFreeVisible, threadAttachReuseHeadless:
-		return s.attachSurfaceToKnownThread(surface, target.Instance, target.View, attachSurfaceToKnownThreadHeadlessRestore), SurfaceResumeResult{Status: SurfaceResumeStatusThreadAttached}
+		// resolveHeadlessRestoreTargetFromView only rules out a *thread* claim
+		// held by another surface; attachSurfaceToKnownThread can still reject the
+		// attach (backend mismatch, workspace/instance claim held by another
+		// feishu window, or a lost thread-claim race) and emit a failure notice
+		// instead of actually attaching. Report the real outcome: if the attach
+		// did not land we must return Failed so the recovery loop applies backoff
+		// and the give-up budget. Returning a hardcoded ThreadAttached made the
+		// loop treat every rejection as success, clear the backoff, and re-emit
+		// the "恢复失败" notice every tick forever.
+		events := s.attachSurfaceToKnownThread(surface, target.Instance, target.View, attachSurfaceToKnownThreadHeadlessRestore)
+		if attached, failureCode := classifyHeadlessRestoreAttach(events); !attached {
+			return events, SurfaceResumeResult{Status: SurfaceResumeStatusFailed, FailureCode: failureCode}
+		}
+		return events, SurfaceResumeResult{Status: SurfaceResumeStatusThreadAttached}
 	case threadAttachCreateHeadless:
 		return s.startHeadlessForResolvedThreadWithMode(surface, target.View, startHeadlessModeHeadlessRestore), SurfaceResumeResult{Status: SurfaceResumeStatusStarting}
 	case threadAttachUnavailable:
@@ -616,6 +629,34 @@ func (s *Service) syntheticHeadlessRestoreView(threadID, threadTitle, workspaceK
 		view.BusyOwner = owner
 	}
 	return view
+}
+
+// classifyHeadlessRestoreAttach inspects the events emitted by
+// attachSurfaceToKnownThread in headless-restore mode and reports whether the
+// surface actually attached. Success emits exactly one "headless_restore_attached"
+// notice; every rejection path emits a "headless_restore_<code>" failure notice
+// without attaching. The returned failureCode is the raw code (prefix stripped)
+// so it lines up with the recovery loop's backoff/give-up bookkeeping.
+func classifyHeadlessRestoreAttach(events []eventcontract.Event) (attached bool, failureCode string) {
+	for _, ev := range events {
+		if ev.Notice == nil {
+			continue
+		}
+		code := strings.TrimSpace(ev.Notice.Code)
+		if code == "headless_restore_attached" {
+			return true, ""
+		}
+		if strings.HasPrefix(code, "headless_restore_") {
+			failureCode = strings.TrimPrefix(code, "headless_restore_")
+		}
+	}
+	if failureCode == "" {
+		// No recognizable outcome notice (e.g. backend mismatch path emits a
+		// thread_not_found notice, but be defensive): treat as a transient
+		// not-found so the surface still backs off rather than busy-looping.
+		failureCode = "thread_not_found"
+	}
+	return false, failureCode
 }
 
 func headlessRestoreFailureNotice(code string) *control.Notice {

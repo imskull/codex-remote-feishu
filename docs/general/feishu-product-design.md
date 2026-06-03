@@ -1,7 +1,7 @@
 # Feishu 产品设计
 
 > Type: `general`
-> Updated: `2026-05-04`
+> Updated: `2026-06-03`
 > Summary: 描述当前 Go 版本的 Feishu surface 行为，并同步 canonical 命令清单、统一 page 入口、reply auto-steer、manual `/compact`、`autowhip`/`autocontinue`、`/cron`、结构化计划更新与共享过程卡的产品语义；其中 `autocontinue` 现由 orchestrator 本地 codex/gateway error-family policy 驱动，不再直接依赖 upstream `willRetry`。
 
 ## 1. 文档定位
@@ -144,6 +144,7 @@ canonical menu key 语法当前固定为：
 - `/list` <-> `list`
 - `/use` <-> `use`
 - `/reasoning high` <-> `reasoning_high`
+- `/access auto` <-> `access_auto`
 - `/access confirm` <-> `access_confirm`
 - `/mode vscode` <-> `mode_vscode`
 - `/autowhip on` <-> `autowhip_on`
@@ -153,6 +154,7 @@ canonical menu key 语法当前固定为：
 旧 menu key alias 仍兼容：
 
 - `threads` / `sessions` -> `/use`
+- `approval_auto` -> `/access auto`
 - `approval_confirm` -> `/access confirm`
 - `reason_high` -> `/reasoning high`
 
@@ -655,10 +657,11 @@ approval request 卡片当前按动态 option 渲染，常见选项包括：
   - `/detach`
   - `/mode` 切换
   - 系统因跨工作区切换或恢复链路而执行 detach-like 清理
-- 默认执行权限仍是 `full access`
+- Codex 默认执行权限仍是 `full access`；Claude 默认执行权限是 auto mode（本地 `accept_edits`，Claude native `acceptEdits`）
+- `/access auto` 或菜单 `access_auto` 会把之后飞书发出的 Claude 消息切回 auto mode；它是显式 override，不依赖当前 thread observed access
 - `/access confirm` 或菜单 `access_confirm` 会把之后飞书发出的消息切到确认模式
 - `/access full` 或菜单 `access_full` 会恢复为全放行
-- `/access clear` 会清除 surface override，并回到默认的 `full access`
+- `/access clear` 会清除 surface override；Claude 下会重新跟随当前 thread observed access，若当前 observed 仍是 confirm/full，需要用 `/access auto` 显式切回 auto mode
 
 ## 6. 图片语义
 

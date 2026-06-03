@@ -13,7 +13,8 @@ func NormalizeAccessMode(value string) string {
 	case "full", "full access", "fullaccess", "full_access", "full-access", "never",
 		"danger-full-access", "danger_full_access", "dangerfullaccess":
 		return AccessModeFullAccess
-	case "accept edits", "acceptedits", "accept_edits", "accept-edits":
+	case "auto", "auto mode", "automode", "auto_mode", "auto-mode",
+		"accept edits", "acceptedits", "accept_edits", "accept-edits":
 		return AccessModeAcceptEdits
 	case "confirm", "approval", "approve", "ask", "on-request", "on_request",
 		"workspace-write", "workspace_write", "workspacewrite":
@@ -60,7 +61,7 @@ func TurnSandboxPolicyForAccessMode(value string) map[string]any {
 func DisplayAccessMode(value string) string {
 	switch EffectiveAccessMode(value) {
 	case AccessModeAcceptEdits:
-		return "accept edits"
+		return "auto mode"
 	case AccessModeConfirm:
 		return "confirm"
 	default:
@@ -71,7 +72,7 @@ func DisplayAccessMode(value string) string {
 func DisplayAccessModeShort(value string) string {
 	switch EffectiveAccessMode(value) {
 	case AccessModeAcceptEdits:
-		return "accept-edits"
+		return "auto"
 	case AccessModeConfirm:
 		return "confirm"
 	default:

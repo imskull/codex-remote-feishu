@@ -27,6 +27,16 @@ func TestClaudePermissionSelectionFromOverrides(t *testing.T) {
 		}
 	})
 
+	t.Run("auto maps to accept edits", func(t *testing.T) {
+		selection := claudePermissionSelectionFromOverrides("auto", "off")
+		if selection.NativeMode != claudePermissionModeAcceptEdits {
+			t.Fatalf("expected acceptEdits, got %#v", selection)
+		}
+		if selection.AccessMode != agentproto.AccessModeAcceptEdits || selection.PlanMode != "off" {
+			t.Fatalf("unexpected selection: %#v", selection)
+		}
+	})
+
 	t.Run("plan overrides access mode natively", func(t *testing.T) {
 		selection := claudePermissionSelectionFromOverrides(agentproto.AccessModeFullAccess, "on")
 		if selection.NativeMode != claudePermissionModePlan {

@@ -51,6 +51,56 @@ func TestObserveConfigClaudeThreadAccessDoesNotPersistWorkspaceDefaults(t *testi
 	}
 }
 
+func TestClaudeHeadlessDefaultsToAutoAccessWhenObservedConfigUnknown(t *testing.T) {
+	now := time.Date(2026, 6, 3, 9, 0, 0, 0, time.UTC)
+	svc := newServiceForTest(&now)
+	workspaceKey := "/data/dl/droid"
+	svc.UpsertInstance(&state.InstanceRecord{
+		InstanceID:              "inst-1",
+		DisplayName:             "droid",
+		WorkspaceRoot:           workspaceKey,
+		WorkspaceKey:            workspaceKey,
+		ShortName:               "droid",
+		Backend:                 agentproto.BackendClaude,
+		ClaudeProfileID:         state.DefaultClaudeProfileID,
+		Source:                  "headless",
+		Managed:                 true,
+		Online:                  true,
+		ObservedFocusedThreadID: "thread-1",
+		Threads: map[string]*state.ThreadRecord{
+			"thread-1": {ThreadID: "thread-1", Name: "修复登录流程", CWD: workspaceKey},
+		},
+	})
+	svc.ApplySurfaceAction(control.Action{Kind: control.ActionModeCommand, SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", Text: "/mode claude"})
+	svc.ApplySurfaceAction(control.Action{Kind: control.ActionAttachInstance, SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", InstanceID: "inst-1"})
+
+	snapshot := svc.SurfaceSnapshot("surface-1")
+	if snapshot == nil {
+		t.Fatal("expected surface snapshot")
+	}
+	if snapshot.NextPrompt.EffectiveAccessMode != agentproto.AccessModeAcceptEdits || snapshot.NextPrompt.EffectiveAccessModeSource != "surface_default" {
+		t.Fatalf("expected claude default auto access, got %#v", snapshot.NextPrompt)
+	}
+
+	svc.ApplySurfaceAction(control.Action{
+		Kind:             control.ActionTextMessage,
+		SurfaceSessionID: "surface-1",
+		MessageID:        "msg-1",
+		Text:             "继续",
+	})
+	surface := svc.root.Surfaces["surface-1"]
+	var item *state.QueueItemRecord
+	for _, current := range surface.QueueItems {
+		item = current
+	}
+	if item == nil {
+		t.Fatal("expected queue item")
+	}
+	if item.FrozenOverride.AccessMode != agentproto.AccessModeAcceptEdits {
+		t.Fatalf("expected queued prompt to freeze auto access, got %#v", item.FrozenOverride)
+	}
+}
+
 func TestClaudeHeadlessObservedThreadAccessFeedsPromptFreeze(t *testing.T) {
 	now := time.Date(2026, 5, 4, 12, 10, 0, 0, time.UTC)
 	svc := newServiceForTest(&now)
@@ -119,6 +169,51 @@ func TestClaudeHeadlessObservedThreadAccessFeedsPromptFreeze(t *testing.T) {
 	}
 	if item.FrozenOverride.AccessMode != agentproto.AccessModeConfirm {
 		t.Fatalf("expected queue item to freeze observed thread access, got %#v", item.FrozenOverride)
+	}
+}
+
+func TestAccessAutoOverridesPreviouslyObservedClaudeConfirmMode(t *testing.T) {
+	now := time.Date(2026, 6, 3, 9, 10, 0, 0, time.UTC)
+	svc := newServiceForTest(&now)
+	workspaceKey := "/data/dl/droid"
+	svc.UpsertInstance(&state.InstanceRecord{
+		InstanceID:              "inst-1",
+		DisplayName:             "droid",
+		WorkspaceRoot:           workspaceKey,
+		WorkspaceKey:            workspaceKey,
+		ShortName:               "droid",
+		Backend:                 agentproto.BackendClaude,
+		ClaudeProfileID:         state.DefaultClaudeProfileID,
+		Source:                  "headless",
+		Managed:                 true,
+		Online:                  true,
+		ObservedFocusedThreadID: "thread-1",
+		Threads: map[string]*state.ThreadRecord{
+			"thread-1": {ThreadID: "thread-1", Name: "修复登录流程", CWD: workspaceKey},
+		},
+	})
+	svc.ApplySurfaceAction(control.Action{Kind: control.ActionModeCommand, SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", Text: "/mode claude"})
+	svc.ApplySurfaceAction(control.Action{Kind: control.ActionAttachInstance, SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", InstanceID: "inst-1"})
+	svc.ApplyAgentEvent("inst-1", agentproto.Event{
+		Kind:        agentproto.EventConfigObserved,
+		ThreadID:    "thread-1",
+		CWD:         workspaceKey,
+		ConfigScope: "thread",
+		AccessMode:  agentproto.AccessModeConfirm,
+	})
+
+	events := svc.ApplySurfaceAction(control.Action{
+		Kind:             control.ActionAccessCommand,
+		SurfaceSessionID: "surface-1",
+		Text:             "/access auto",
+	})
+	surface := svc.root.Surfaces["surface-1"]
+	if len(events) != 1 || surface.PromptOverride.AccessMode != agentproto.AccessModeAcceptEdits {
+		t.Fatalf("expected /access auto to set auto override, events=%#v override=%#v", events, surface.PromptOverride)
+	}
+	snapshot := svc.SurfaceSnapshot("surface-1")
+	if snapshot == nil || snapshot.NextPrompt.EffectiveAccessMode != agentproto.AccessModeAcceptEdits || snapshot.NextPrompt.EffectiveAccessModeSource != "surface_override" {
+		t.Fatalf("expected /access auto to override observed confirm, got %#v", snapshot)
 	}
 }
 

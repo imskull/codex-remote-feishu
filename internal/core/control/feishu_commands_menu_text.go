@@ -27,7 +27,7 @@ func normalizeReasoningMenuArgument(value string) (string, bool) {
 func normalizeAccessMenuArgument(value string) (string, bool) {
 	mode := strings.ToLower(strings.TrimSpace(value))
 	switch mode {
-	case "full", "confirm", "clear":
+	case "auto", "full", "confirm", "clear":
 		return mode, true
 	default:
 		return "", false

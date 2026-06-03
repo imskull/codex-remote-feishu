@@ -321,6 +321,40 @@ func TestAccessCommandUpdatesSnapshotAndQueueFreeze(t *testing.T) {
 	}
 }
 
+func TestAccessAutoRejectedOutsideClaudeMode(t *testing.T) {
+	now := time.Date(2026, 6, 3, 9, 20, 0, 0, time.UTC)
+	svc := newServiceForTest(&now)
+	svc.UpsertInstance(&state.InstanceRecord{
+		InstanceID:              "inst-1",
+		DisplayName:             "droid",
+		WorkspaceRoot:           "/data/dl/droid",
+		WorkspaceKey:            "/data/dl/droid",
+		ShortName:               "droid",
+		Online:                  true,
+		ObservedFocusedThreadID: "thread-1",
+		Threads: map[string]*state.ThreadRecord{
+			"thread-1": {ThreadID: "thread-1", Name: "修复登录流程", CWD: "/data/dl/droid"},
+		},
+	})
+	svc.ApplySurfaceAction(control.Action{Kind: control.ActionAttachInstance, SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", InstanceID: "inst-1"})
+
+	events := svc.ApplySurfaceAction(control.Action{
+		Kind:             control.ActionAccessCommand,
+		SurfaceSessionID: "surface-1",
+		Text:             "/access auto",
+	})
+	surface := svc.root.Surfaces["surface-1"]
+	if len(events) != 1 || events[0].PageView == nil {
+		t.Fatalf("expected inline error page for codex /access auto, got %#v", events)
+	}
+	if text := commandCatalogSummaryText(commandCatalogFromEvent(t, events[0])); !strings.Contains(text, "仅支持 Claude") {
+		t.Fatalf("expected codex /access auto rejection to explain claude-only mode, got %q", text)
+	}
+	if surface.PromptOverride.AccessMode != "" {
+		t.Fatalf("expected /access auto outside claude not to mutate override, got %#v", surface.PromptOverride)
+	}
+}
+
 func TestAutoWhipCommandUpdatesSnapshotWithoutAttach(t *testing.T) {
 	now := time.Date(2026, 4, 9, 10, 0, 0, 0, time.UTC)
 	svc := newServiceForTest(&now)

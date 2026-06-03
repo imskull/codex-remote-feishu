@@ -182,7 +182,7 @@ func (s *Service) resolvePromptConfig(inst *state.InstanceRecord, surface *state
 		}
 	}
 	effectiveAccessModeSource := "surface_default"
-	effectiveAccessMode := agentproto.AccessModeFullAccess
+	effectiveAccessMode := defaultPromptAccessModeForBackend(backend)
 	if agentproto.NormalizeAccessMode(override.AccessMode) != "" {
 		effectiveAccessMode = override.AccessMode
 		effectiveAccessModeSource = "surface_override"
@@ -233,6 +233,13 @@ func defaultPromptReasoningEffortForBackend(backend agentproto.Backend) string {
 		return ""
 	}
 	return defaultReasoningEffort
+}
+
+func defaultPromptAccessModeForBackend(backend agentproto.Backend) string {
+	if agentproto.NormalizeBackend(backend) == agentproto.BackendClaude {
+		return agentproto.AccessModeAcceptEdits
+	}
+	return agentproto.AccessModeFullAccess
 }
 
 func (s *Service) resolveBasePromptConfig(inst *state.InstanceRecord, surface *state.SurfaceConsoleRecord, threadID, cwd string) (configValue, configValue, configValue) {

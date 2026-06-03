@@ -172,9 +172,24 @@ func accessPageViewFromCommandConfigView(view FeishuCatalogConfigView) FeishuPag
 	return commandConfigPageView(def, view, bodySections, noticeSections, []CommandCatalogSection{{
 		Title: "立即应用",
 		Entries: []CommandCatalogEntry{{
-			Buttons: choiceButtonsFromOptions(def.Options, strings.TrimSpace(view.OverrideValue), ""),
+			Buttons: choiceButtonsFromOptions(accessOptionsForConfigView(view), strings.TrimSpace(view.OverrideValue), ""),
 		}},
 	}})
+}
+
+func accessOptionsForConfigView(view FeishuCatalogConfigView) []FeishuCommandOption {
+	def, _ := FeishuCommandDefinitionByID(FeishuCommandAccess)
+	if agentproto.NormalizeBackend(view.CatalogBackend) == agentproto.BackendClaude {
+		return def.Options
+	}
+	options := make([]FeishuCommandOption, 0, len(def.Options))
+	for _, option := range def.Options {
+		if strings.TrimSpace(option.Value) == "auto" {
+			continue
+		}
+		options = append(options, option)
+	}
+	return options
 }
 
 func planPageViewFromCommandConfigView(view FeishuCatalogConfigView) FeishuPageView {

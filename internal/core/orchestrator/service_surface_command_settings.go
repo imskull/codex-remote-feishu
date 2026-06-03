@@ -688,7 +688,7 @@ func (s *Service) handleAccessCommand(surface *state.SurfaceConsoleRecord, actio
 	if len(parts) != 2 {
 		return s.inlineCommandCardEvents(surface, action, control.FeishuCatalogConfigView{
 			StatusKind:       "error",
-			StatusText:       "用法：`/access` 查看当前配置；`/access full`；`/access confirm`；`/access clear`。",
+			StatusText:       accessCommandUsageTextForBackend(s.surfaceBackend(surface)),
 			FormDefaultValue: actionCommandArgumentText(action),
 		})
 	}
@@ -707,7 +707,14 @@ func (s *Service) handleAccessCommand(surface *state.SurfaceConsoleRecord, actio
 	if mode == "" {
 		return s.inlineCommandCardEvents(surface, action, control.FeishuCatalogConfigView{
 			StatusKind:       "error",
-			StatusText:       "执行权限建议使用 `full` 或 `confirm`。",
+			StatusText:       accessCommandModeHintForBackend(s.surfaceBackend(surface)),
+			FormDefaultValue: actionCommandArgumentText(action),
+		})
+	}
+	if mode == agentproto.AccessModeAcceptEdits && agentproto.NormalizeBackend(s.surfaceBackend(surface)) != agentproto.BackendClaude {
+		return s.inlineCommandCardEvents(surface, action, control.FeishuCatalogConfigView{
+			StatusKind:       "error",
+			StatusText:       "`/access auto` 仅支持 Claude 模式；Codex/VS Code 请使用 `full` 或 `confirm`。",
 			FormDefaultValue: actionCommandArgumentText(action),
 		})
 	}
@@ -720,4 +727,18 @@ func (s *Service) handleAccessCommand(surface *state.SurfaceConsoleRecord, actio
 			CardStatusText: "已更新飞书执行权限模式。",
 		}
 	})
+}
+
+func accessCommandUsageTextForBackend(backend agentproto.Backend) string {
+	if agentproto.NormalizeBackend(backend) == agentproto.BackendClaude {
+		return "用法：`/access` 查看当前配置；`/access auto`；`/access full`；`/access confirm`；`/access clear`。"
+	}
+	return "用法：`/access` 查看当前配置；`/access full`；`/access confirm`；`/access clear`。"
+}
+
+func accessCommandModeHintForBackend(backend agentproto.Backend) string {
+	if agentproto.NormalizeBackend(backend) == agentproto.BackendClaude {
+		return "执行权限建议使用 `auto`、`full` 或 `confirm`。"
+	}
+	return "执行权限建议使用 `full` 或 `confirm`。"
 }

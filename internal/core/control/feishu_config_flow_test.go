@@ -123,6 +123,33 @@ func TestBuildFeishuReasoningConfigPageUsesBackendSpecificOptions(t *testing.T) 
 	}
 }
 
+func TestBuildFeishuAccessConfigPageUsesBackendSpecificOptions(t *testing.T) {
+	codexPage := BuildFeishuCommandConfigPageView(FeishuCatalogConfigView{
+		CommandID:      FeishuCommandAccess,
+		CatalogBackend: agentproto.BackendCodex,
+	})
+	if got := commandTextsForFirstButtonRow(codexPage); !reflect.DeepEqual(got, []string{
+		"/access full",
+		"/access confirm",
+		"/access clear",
+	}) {
+		t.Fatalf("unexpected codex access options: %#v", got)
+	}
+
+	claudePage := BuildFeishuCommandConfigPageView(FeishuCatalogConfigView{
+		CommandID:      FeishuCommandAccess,
+		CatalogBackend: agentproto.BackendClaude,
+	})
+	if got := commandTextsForFirstButtonRow(claudePage); !reflect.DeepEqual(got, []string{
+		"/access auto",
+		"/access full",
+		"/access confirm",
+		"/access clear",
+	}) {
+		t.Fatalf("unexpected claude access options: %#v", got)
+	}
+}
+
 func commandTextsForFirstButtonRow(page FeishuPageView) []string {
 	if len(page.Sections) == 0 || len(page.Sections[0].Entries) == 0 {
 		return nil

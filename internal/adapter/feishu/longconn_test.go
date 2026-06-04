@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"github.com/kxn/codex-remote-feishu/internal/core/control"
@@ -97,6 +98,51 @@ func TestLiveGatewayStartStopsOnContextCancel(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for gateway to stop after cancel")
+	}
+}
+
+func TestGatewayRunnerReconnectsOnSilentReadTimeout(t *testing.T) {
+	// The test server upgrades the websocket then stays completely silent,
+	// reproducing a half-open connection: ReadMessage would block forever without
+	// a read deadline. The runner must trip its idle window and surface an error
+	// so Run() can reconnect.
+	server := newGatewayWSTestServer(t, gatewayWSTestServerConfig{})
+	defer server.Close()
+
+	runner := newGatewayWSRunner(LiveGatewayConfig{
+		GatewayID: "app-1",
+		AppID:     "cli_xxx",
+		AppSecret: "secret_xxx",
+		Domain:    server.URL,
+	}, dispatcher.NewEventDispatcher("", ""), nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	connURL, clientConf, err := runner.fetchEndpoint(ctx)
+	if err != nil {
+		t.Fatalf("fetchEndpoint: %v", err)
+	}
+	runner.setClientConfig(clientConf)
+
+	// Shrink the idle window so the silent server trips it quickly in the test.
+	runner.configMu.Lock()
+	runner.readTimeout = 200 * time.Millisecond
+	runner.configMu.Unlock()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- runner.runSession(ctx, connURL) }()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected read-timeout error from silent connection, got nil")
+		}
+		if !strings.Contains(err.Error(), "read timeout") {
+			t.Fatalf("expected read timeout error, got: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("runSession did not return after the read deadline elapsed")
 	}
 }
 

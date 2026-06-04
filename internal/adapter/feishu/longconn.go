@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +24,16 @@ import (
 const (
 	defaultReconnectInterval = 2 * time.Minute
 	defaultPingInterval      = 2 * time.Minute
+
+	// readDeadlinePingMultiplier sets the idle read window as a multiple of the
+	// (server-provided) ping interval. The server answers each of our pings with
+	// a pong, so on a healthy link we receive a frame every ping interval; missing
+	// this many consecutive pongs means the socket is dead (e.g. half-open after a
+	// network blip) and must be reconnected rather than blocking ReadMessage forever.
+	readDeadlinePingMultiplier = 3
+	// minReadTimeout floors the idle read window so a small server-reported ping
+	// interval can never make us reconnect spuriously on a healthy connection.
+	minReadTimeout = 60 * time.Second
 )
 
 type GatewayState string
@@ -72,16 +84,17 @@ func (e *gatewayRunnerError) Code() string {
 }
 
 type gatewayWSRunner struct {
-	config     LiveGatewayConfig
-	dispatcher *dispatcher.EventDispatcher
-	onState    func(GatewayState, error)
-	httpClient *http.Client
-	dialer     *websocket.Dialer
-	writeMu    sync.Mutex
-	combineMu  sync.Mutex
-	combine    map[string][][]byte
-	configMu   sync.RWMutex
-	clientConf larkws.ClientConfig
+	config      LiveGatewayConfig
+	dispatcher  *dispatcher.EventDispatcher
+	onState     func(GatewayState, error)
+	httpClient  *http.Client
+	dialer      *websocket.Dialer
+	writeMu     sync.Mutex
+	combineMu   sync.Mutex
+	combine     map[string][][]byte
+	configMu    sync.RWMutex
+	clientConf  larkws.ClientConfig
+	readTimeout time.Duration
 }
 
 func newGatewayWSRunner(config LiveGatewayConfig, dispatcher *dispatcher.EventDispatcher, onState func(GatewayState, error)) *gatewayWSRunner {
@@ -90,12 +103,13 @@ func newGatewayWSRunner(config LiveGatewayConfig, dispatcher *dispatcher.EventDi
 		config.Domain = lark.FeishuBaseUrl
 	}
 	return &gatewayWSRunner{
-		config:     config,
-		dispatcher: dispatcher,
-		onState:    onState,
-		httpClient: http.DefaultClient,
-		dialer:     websocket.DefaultDialer,
-		combine:    map[string][][]byte{},
+		config:      config,
+		dispatcher:  dispatcher,
+		onState:     onState,
+		httpClient:  http.DefaultClient,
+		dialer:      websocket.DefaultDialer,
+		combine:     map[string][][]byte{},
+		readTimeout: computeReadTimeout(defaultPingInterval),
 	}
 }
 
@@ -267,9 +281,26 @@ func (r *gatewayWSRunner) runSession(ctx context.Context, connURL string) error 
 	}()
 	go r.pingLoop(ctx, done, conn, serviceIDFromURL(connURL))
 
+	if err := r.refreshReadDeadline(conn); err != nil {
+		return &gatewayRunnerError{code: "connect_failed", err: err}
+	}
 	for {
 		mt, msg, err := conn.ReadMessage()
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			if isReadTimeout(err) {
+				return &gatewayRunnerError{
+					code: "connect_failed",
+					err:  fmt.Errorf("read timeout after %s without a frame, connection presumed dead: %w", r.currentReadTimeout(), err),
+				}
+			}
+			return &gatewayRunnerError{code: "connect_failed", err: err}
+		}
+		// Any received frame (pong, event, card) proves the peer is alive; extend
+		// the idle window so only a genuinely silent socket trips the deadline.
+		if err := r.refreshReadDeadline(conn); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -307,6 +338,10 @@ func (r *gatewayWSRunner) pingLoop(ctx context.Context, done <-chan struct{}, co
 			continue
 		}
 		if err := r.writeMessage(conn, websocket.BinaryMessage, bs); err != nil {
+			// A failed keepalive write means the socket is broken; close it so the
+			// read loop unblocks at once and Run reconnects, instead of waiting for
+			// the OS retransmit timeout (or the read deadline) to notice.
+			_ = conn.Close()
 			return
 		}
 	}
@@ -460,6 +495,47 @@ func (r *gatewayWSRunner) setClientConfig(conf larkws.ClientConfig) {
 	r.configMu.Lock()
 	defer r.configMu.Unlock()
 	r.clientConf = conf
+	ping := defaultPingInterval
+	if conf.PingInterval > 0 {
+		ping = time.Duration(conf.PingInterval) * time.Second
+	}
+	r.readTimeout = computeReadTimeout(ping)
+}
+
+func computeReadTimeout(ping time.Duration) time.Duration {
+	if ping <= 0 {
+		ping = defaultPingInterval
+	}
+	window := readDeadlinePingMultiplier * ping
+	if window < minReadTimeout {
+		window = minReadTimeout
+	}
+	return window
+}
+
+func (r *gatewayWSRunner) currentReadTimeout() time.Duration {
+	r.configMu.RLock()
+	defer r.configMu.RUnlock()
+	if r.readTimeout > 0 {
+		return r.readTimeout
+	}
+	return computeReadTimeout(defaultPingInterval)
+}
+
+func (r *gatewayWSRunner) refreshReadDeadline(conn *websocket.Conn) error {
+	timeout := r.currentReadTimeout()
+	if timeout <= 0 {
+		return conn.SetReadDeadline(time.Time{})
+	}
+	return conn.SetReadDeadline(time.Now().Add(timeout))
+}
+
+func isReadTimeout(err error) bool {
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func (r *gatewayWSRunner) sleepBeforeRetry(ctx context.Context, retryCount int) bool {

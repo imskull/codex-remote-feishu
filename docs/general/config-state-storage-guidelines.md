@@ -194,7 +194,7 @@
 - backend 上报或 session catalog 观测到的状态应能更新 observed state
 - 如果 backend 主动退出某状态，例如 Claude `ExitPlanMode`，本地不应因为旧的持久 desired state 又强行切回去
 - Claude headless 的 runtime `access` 观察态应落在 thread/runtime observed carrier，不写 `Root.WorkspaceDefaults`
-- Claude headless 在没有飞书显式 `/access` override 时，下一条 prompt 的 base access 应优先跟随当前 thread/runtime observed access；没有 observed access 时默认使用 auto mode（本地 `accept_edits` / Claude native `acceptEdits`）
+- Claude headless 在没有飞书显式 `/access` override 时，下一条 prompt 的 base access 应优先跟随当前 thread/runtime observed access；没有 observed access 时默认使用 auto mode（本地 `accept_edits` / Claude native `auto`）
 - 飞书端 UI 应展示“当前 backend 状态”和“下一条飞书消息覆盖”之间的区别
 - VS Code 模式下，observed state 只能作为展示和本地入队时的参考；没有飞书显式 requested override 时，prompt command 不应把 observed model / reasoning / access / plan 再作为 override 下发给 backend
 - VS Code 模式下，状态投影也必须遵守同一语义：没有飞书显式 requested override 时，应显示“不覆盖 / 跟随 VS Code 当前状态”，不能把 observed/default effective 值渲染成“下条飞书消息”会强制下发的配置
@@ -217,7 +217,7 @@
 | Codex headless plan mode | Backend Behavior With Shared Authority | 不跨 daemon resume 持久化 | live surface runtime + prompt frozen override | live session 内 sticky；不是 thread persisted default，surface resume 不恢复 Codex plan。 |
 | Claude profile model | Local Routing / Launch Contract / profile config | 是 | `profileID` | 不应开放飞书 `/model` 临时改 Claude model。 |
 | Claude profile reasoning 默认值 | Backend Behavior With Local SSOT | 是 | `profileID` 或 `claude + claudeProfileID + workspaceKey` | 若作为全局 profile 默认，用 `profileID`；若允许工作区覆盖，再加 `workspaceKey`。 |
-| Claude access | Backend Behavior With Shared Authority | 作为 `workspace+profile` 快照持久化显式飞书 override；不写 workspace default | thread observed state + surface override + `workspace+profile` snapshot + prompt frozen override | `set_permission_mode` 仍是当前 session runtime state；无显式 `/access` override 时，下条 prompt 仍优先跟随 thread/runtime observed access，没有 observed access 时默认 auto mode。`/access auto` 是显式 `accept_edits` override，可从 confirm/full 切回 Claude native `acceptEdits`。只有用户显式设置的飞书 override 才会写入和恢复 `workspace+profile` 快照。 |
+| Claude access | Backend Behavior With Shared Authority | 作为 `workspace+profile` 快照持久化显式飞书 override；不写 workspace default | thread observed state + surface override + `workspace+profile` snapshot + prompt frozen override | `set_permission_mode` 仍是当前 session runtime state；无显式 `/access` override 时，下条 prompt 仍优先跟随 thread/runtime observed access，没有 observed access 时默认 auto mode。`/access auto` 是显式 `accept_edits` override，可从 confirm/full 切回 Claude native `auto`。只有用户显式设置的飞书 override 才会写入和恢复 `workspace+profile` 快照。 |
 | Claude plan mode | Backend Behavior With Shared Authority | 不跨 daemon resume，也不作为 workspace/profile 快照持久化 | live surface runtime + thread observed state + prompt frozen override | Claude 可通过 `ExitPlanMode` 主动退出，本地不能强行恢复旧 plan；`request.resolved(plan_confirmation + accept)` 后 surface 也应同步清掉旧 plan override。 |
 | VS Code 下 model / reasoning / access / plan | Backend Behavior With Shared Authority | 默认不作为本地 SSOT | observed state + local requested per-turn override | VS Code 端也可能修改；没有飞书显式 override 时，只展示 observed state，不把 observed/default 值重新下发给 backend。 |
 

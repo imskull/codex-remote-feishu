@@ -9,6 +9,7 @@ import (
 
 const (
 	claudePermissionModeDefault           = "default"
+	claudePermissionModeAuto              = "auto"
 	claudePermissionModeAcceptEdits       = "acceptEdits"
 	claudePermissionModePlan              = "plan"
 	claudePermissionModeBypassPermissions = "bypassPermissions"
@@ -27,6 +28,13 @@ func CompileObservedPermissionStateFromClaudeNative(mode string) *agentproto.Obs
 		return &agentproto.ObservedPermissionState{
 			NativeMode:          nativeMode,
 			ProjectedAccessMode: agentproto.AccessModeConfirm,
+			ProjectedPlanMode:   string(state.PlanModeSettingOff),
+			ProjectionKind:      agentproto.ObservedPermissionProjectionKindExact,
+		}
+	case claudePermissionModeAuto:
+		return &agentproto.ObservedPermissionState{
+			NativeMode:          nativeMode,
+			ProjectedAccessMode: agentproto.AccessModeAcceptEdits,
 			ProjectedPlanMode:   string(state.PlanModeSettingOff),
 			ProjectionKind:      agentproto.ObservedPermissionProjectionKindExact,
 		}

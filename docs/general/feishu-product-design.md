@@ -657,7 +657,7 @@ approval request 卡片当前按动态 option 渲染，常见选项包括：
   - `/detach`
   - `/mode` 切换
   - 系统因跨工作区切换或恢复链路而执行 detach-like 清理
-- Codex 默认执行权限仍是 `full access`；Claude 默认执行权限是 auto mode（本地 `accept_edits`，Claude native `acceptEdits`）
+- Codex 默认执行权限仍是 `full access`；Claude 默认执行权限是 auto mode（本地 `accept_edits`，Claude native `auto`）
 - `/access auto` 或菜单 `access_auto` 会把之后飞书发出的 Claude 消息切回 auto mode；它是显式 override，不依赖当前 thread observed access
 - `/access confirm` 或菜单 `access_confirm` 会把之后飞书发出的消息切到确认模式
 - `/access full` 或菜单 `access_full` 会恢复为全放行

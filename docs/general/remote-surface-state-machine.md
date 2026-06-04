@@ -190,7 +190,7 @@ surface 不是单一枚举，而是五层正交状态叠加。
    1. headless 主链为了保持现有执行合同，queue item 仍会冻结最终 effective model / reasoning / access。
    2. headless 主链的 base config 当前只读取 thread explicit config、backend/profile-scoped workspace defaults 与 surface override；旧 `InstanceRecord.CWDDefaults` 和旧 workspace-defaults storage key 都不再参与 headless fallback。`CWDDefaults` 仅保留给 `vscode` 的 observed-config 展示与 freeze 语义。
    3. Claude headless 的 runtime `permissionMode` 现在会通过标准 `config.observed(thread)` 回填 thread observed access/plan；`/status`、`/access`、`/plan` 和 headless prompt freeze 都读这条 observed state，而不是把它误持久成 workspace default。
-   4. Claude headless 在没有飞书显式 `/access` override 时，下一条 prompt 的 base access 会优先跟随当前 thread observed access；没有 observed access 时默认 auto mode（本地 `accept_edits` / Claude native `acceptEdits`）；旧的 Claude workspace default access 不再参与这条解析。若当前 thread 已因 `/access confirm|full` 观测为非 auto，用户需要 `/access auto` 显式切回 auto mode。
+   4. Claude headless 在没有飞书显式 `/access` override 时，下一条 prompt 的 base access 会优先跟随当前 thread observed access；没有 observed access 时默认 auto mode（本地 `accept_edits` / Claude native `auto`）；旧的 Claude workspace default access 不再参与这条解析。若当前 thread 已因 `/access confirm|full` 观测为非 auto，用户需要 `/access auto` 显式切回 auto mode。
    5. `vscode` 主链只冻结飞书显式 requested override；observed cwd/thread config 仍可用于 `/status` / 参数卡展示，但不会在没有本地显式覆盖时被重新下发给 backend。
    6. Codex translator 收到 empty access override 时不会改写 `approvalPolicy` / `sandboxPolicy`；只有显式 `full` / `confirm` 才会下发对应权限策略。
 10. headless workspace-first 主链当前已经完成这一轮产品收窄：

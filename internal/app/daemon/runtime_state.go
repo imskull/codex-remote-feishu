@@ -12,15 +12,21 @@ import (
 )
 
 type surfaceResumeRecoveryState struct {
-	Entry           surfaceresume.Entry
-	NextAttemptAt   time.Time
-	LastAttemptAt   time.Time
-	LastFailureCode string
+	Entry             surfaceresume.Entry
+	NextAttemptAt     time.Time
+	LastAttemptAt     time.Time
+	LastFailureCode   string
+	StickyFailureCode string
+	LastNoticeCode    string
 	// FailureCount tracks how many consecutive attempts have failed with the
-	// same LastFailureCode. Once it reaches surfaceResumeMaxFailedAttempts the
+	// same failure code. Once it reaches surfaceResumeMaxFailedAttempts the
 	// surface gives up auto-recovery and stops polling until its resume target
 	// changes (or the daemon restarts).
 	FailureCount int
+	// GaveUp records that the surface has exhausted its retry budget and has
+	// already emitted its one-time hand-off notice, so auto-recovery stays quiet
+	// until clearSurfaceResumeBackoffLocked re-arms it.
+	GaveUp bool
 }
 
 type vscodeMigrationFlowRecord struct {

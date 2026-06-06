@@ -11,9 +11,9 @@ import (
 
 	"github.com/kxn/codex-remote-feishu/internal/adapter/feishu"
 	"github.com/kxn/codex-remote-feishu/internal/app/daemon/surfaceresume"
+	"github.com/kxn/codex-remote-feishu/internal/config"
 	"github.com/kxn/codex-remote-feishu/internal/core/agentproto"
 	"github.com/kxn/codex-remote-feishu/internal/core/control"
-	"github.com/kxn/codex-remote-feishu/internal/core/eventcontract"
 	"github.com/kxn/codex-remote-feishu/internal/core/orchestrator"
 	"github.com/kxn/codex-remote-feishu/internal/core/state"
 	relayruntime "github.com/kxn/codex-remote-feishu/internal/runtime"
@@ -1453,128 +1453,198 @@ func TestDaemonNormalResumeFailureEmitsNoticeAfterFirstRefresh(t *testing.T) {
 	}
 }
 
-func TestDaemonResumeBusyGivesUpAfterRetryBudget(t *testing.T) {
+func TestDaemonHeadlessResumeProviderPrepareFailureUsesProviderNotice(t *testing.T) {
 	t.Parallel()
 
 	stateDir := t.TempDir()
-	for _, surfaceID := range []string{"surface-1", "surface-2"} {
-		putSurfaceResumeStateForTest(t, stateDir, surfaceresume.Entry{
-			SurfaceSessionID:   surfaceID,
-			GatewayID:          "app-1",
-			ChatID:             "chat-" + surfaceID,
-			ActorUserID:        "user-1",
-			ProductMode:        "vscode",
-			ResumeInstanceID:   "inst-vscode-1",
-			ResumeThreadID:     "thread-1",
-			ResumeWorkspaceKey: "/data/dl/droid",
-			ResumeRouteMode:    "follow_local",
-		})
+	putSurfaceResumeStateForTest(t, stateDir, surfaceresume.Entry{
+		SurfaceSessionID:   "surface-1",
+		GatewayID:          "app-1",
+		ChatID:             "chat-1",
+		ActorUserID:        "user-1",
+		ProductMode:        "normal",
+		Backend:            "codex",
+		CodexProviderID:    "team-proxy",
+		ResumeThreadID:     "thread-1",
+		ResumeThreadTitle:  "修复登录流程",
+		ResumeThreadCWD:    "/data/dl/droid",
+		ResumeWorkspaceKey: "/data/dl/droid",
+		ResumeRouteMode:    "pinned",
+		ResumeHeadless:     true,
+	})
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.WriteAppConfig(configPath, config.DefaultAppConfig()); err != nil {
+		t.Fatalf("WriteAppConfig: %v", err)
 	}
 
-	gateway := newLifecycleGateway()
+	gateway := &recordingGateway{}
 	app := New(":0", ":0", gateway, agentproto.ServerIdentity{})
 	app.SetHeadlessRuntime(HeadlessRuntimeConfig{
 		IdleTTL:    time.Hour,
 		KillGrace:  time.Second,
+		ConfigPath: configPath,
 		Paths:      relayruntime.Paths{StateDir: stateDir},
 		BinaryPath: "codex",
 	})
-	app.sendAgentCommand = func(string, agentproto.Command) error { return nil }
-	app.startHeadless = func(relayruntime.HeadlessLaunchOptions) (int, error) { return 1, nil }
+	app.ConfigureAdmin(AdminRuntimeOptions{
+		ConfigPath:      configPath,
+		Services:        defaultFeishuServices(),
+		AdminListenHost: "127.0.0.1",
+		AdminListenPort: "9501",
+		AdminURL:        "http://localhost:9501/admin/",
+		SetupURL:        "http://localhost:9501/setup",
+	})
 
-	// Exactly one VS Code instance is online, so only one surface can claim it;
-	// the other surface keeps resolving to a permanent instance_busy failure.
-	seedVSCodeResumeInstance(app, "inst-vscode-1", "thread-1")
-	// Mark VS Code compatibility as already checked so recovery isn't deferred
-	// behind the async compatibility probe (which never resolves under test).
-	app.setCachedVSCodeCompatibilityIssueLocked(nil)
+	app.onTick(context.Background(), time.Date(2026, 5, 31, 7, 0, 0, 0, time.UTC))
 
-	ctx := context.Background()
-	base := time.Now().UTC()
-
-	noticeCount := func(title string) int {
-		count := 0
-		for _, op := range gateway.snapshotOperations() {
-			if op.SurfaceSessionID == "surface-2" && op.CardTitle == title {
-				count++
-			}
-		}
-		return count
+	if len(gateway.operations) != 1 {
+		t.Fatalf("expected one restore failure notice, got %#v", gateway.operations)
 	}
-
-	app.onTick(ctx, base)
-
-	if snapshot := app.service.SurfaceSnapshot("surface-1"); snapshot == nil || snapshot.Attachment.InstanceID != "inst-vscode-1" {
-		t.Fatalf("expected surface-1 to win the instance claim, got %#v", snapshot)
-	}
-	if got := noticeCount("恢复失败"); got != 1 {
-		t.Fatalf("expected exactly one busy failure notice on first attempt, got %d", got)
-	}
-
-	// Drive recovery ticks past the backoff window. The busy condition never
-	// clears, so after surfaceResumeMaxFailedAttempts the surface must give up:
-	// the busy notice stays one-shot, exactly one give-up notice is emitted,
-	// and further ticks stay silent.
-	for i := 1; i <= surfaceResumeMaxFailedAttempts+3; i++ {
-		app.onTick(ctx, base.Add(time.Duration(i)*(surfaceResumeRetryBackoff+time.Second)))
-	}
-
-	if got := noticeCount("恢复失败"); got != 1 {
-		t.Fatalf("expected busy failure notice to stay one-shot across retries, got %d", got)
-	}
-	if got := noticeCount("已停止自动恢复"); got != 1 {
-		t.Fatalf("expected exactly one give-up notice after exhausting retries, got %d", got)
-	}
-
-	recovery := app.surfaceResumeRuntime.recovery["surface-2"]
-	if recovery == nil {
-		t.Fatal("expected surface-2 recovery state to remain (gave up, not retrying)")
-	}
-	if recovery.FailureCount < surfaceResumeMaxFailedAttempts {
-		t.Fatalf("expected surface-2 to have exhausted its retry budget, got FailureCount=%d", recovery.FailureCount)
+	text := operationCardText(gateway.operations[0])
+	if !strings.Contains(text, "Provider") || !strings.Contains(text, "配置") {
+		t.Fatalf("expected provider-specific restore failure notice, got %q", text)
 	}
 }
 
-// TestHeadlessResumeFailureCountSurvivesNoticeCodeWriteback guards the headless
-// feishu path that the VS Code give-up test does not exercise. On every headless
-// resume tick the recovery loop records the raw FailureCode ("thread_busy") and
-// recordManagedHeadlessResumeOutcomeEventsLocked then re-records the same failure
-// from the bundled notice whose Code is the "headless_restore_"-prefixed form.
-// Before the canonicalization fix the two writes disagreed, so noteSurfaceResumeFailure
-// never saw a repeat: FailureCount reset to 1 every tick and the surface never
-// gave up. This drives that exact two-write sequence across ticks and asserts the
-// counter accumulates to the give-up threshold.
-func TestHeadlessResumeFailureCountSurvivesNoticeCodeWriteback(t *testing.T) {
+func TestDaemonHeadlessResumeDoesNotReplaceLaunchFailureWithLaterWorkspaceBusy(t *testing.T) {
 	t.Parallel()
 
-	app := New(":0", ":0", &recordingGateway{}, agentproto.ServerIdentity{})
-	const surfaceID = "surface-1"
-	recovery := &surfaceResumeRecoveryState{
-		Entry: surfaceresume.Entry{SurfaceSessionID: surfaceID, ResumeHeadless: true},
-	}
-	app.surfaceResumeRuntime.recovery[surfaceID] = recovery
+	stateDir := t.TempDir()
+	putSurfaceResumeStateForTest(t, stateDir, surfaceresume.Entry{
+		SurfaceSessionID:   "surface-1",
+		GatewayID:          "app-1",
+		ChatID:             "chat-1",
+		ActorUserID:        "user-1",
+		ProductMode:        "normal",
+		Backend:            "codex",
+		CodexProviderID:    "team-proxy",
+		ResumeThreadID:     "thread-1",
+		ResumeThreadTitle:  "修复登录流程",
+		ResumeThreadCWD:    "/data/dl/droid",
+		ResumeWorkspaceKey: "/data/dl/droid",
+		ResumeRouteMode:    "pinned",
+		ResumeHeadless:     true,
+	})
 
-	base := time.Now().UTC()
-	var gaveUp bool
-	for i := 0; i < surfaceResumeMaxFailedAttempts; i++ {
-		now := base.Add(time.Duration(i) * (surfaceResumeRetryBackoff + time.Second))
-		// 1) recovery loop: raw FailureCode from SurfaceResumeResult.
-		_, gaveUp = noteSurfaceResumeFailure(recovery, "thread_busy")
-		app.setSurfaceResumeBackoffLocked(surfaceID, "thread_busy", now)
-		// 2) app_ingress writeback: the headless restore notice carries the
-		// "headless_restore_"-prefixed form of the same failure.
-		app.recordManagedHeadlessResumeOutcomeEventsLocked([]eventcontract.Event{{
-			Kind:             eventcontract.KindNotice,
-			SurfaceSessionID: surfaceID,
-			Notice:           &control.Notice{Code: "headless_restore_thread_busy"},
-		}}, now)
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.WriteAppConfig(configPath, config.DefaultAppConfig()); err != nil {
+		t.Fatalf("WriteAppConfig: %v", err)
 	}
 
-	if recovery.FailureCount != surfaceResumeMaxFailedAttempts {
-		t.Fatalf("expected FailureCount to accumulate to %d across same-code ticks, got %d", surfaceResumeMaxFailedAttempts, recovery.FailureCount)
+	gateway := &recordingGateway{}
+	app := New(":0", ":0", gateway, agentproto.ServerIdentity{})
+	app.SetHeadlessRuntime(HeadlessRuntimeConfig{
+		IdleTTL:    time.Hour,
+		KillGrace:  time.Second,
+		ConfigPath: configPath,
+		Paths:      relayruntime.Paths{StateDir: stateDir},
+		BinaryPath: "codex",
+	})
+	app.ConfigureAdmin(AdminRuntimeOptions{
+		ConfigPath:      configPath,
+		Services:        defaultFeishuServices(),
+		AdminListenHost: "127.0.0.1",
+		AdminListenPort: "9501",
+		AdminURL:        "http://localhost:9501/admin/",
+		SetupURL:        "http://localhost:9501/setup",
+	})
+
+	firstAttempt := time.Date(2026, 5, 31, 7, 0, 0, 0, time.UTC)
+	app.onTick(context.Background(), firstAttempt)
+
+	if len(gateway.operations) != 1 {
+		t.Fatalf("expected one restore failure notice after launch-preflight failure, got %#v", gateway.operations)
 	}
-	if !gaveUp {
-		t.Fatalf("expected surface to give up after %d same-code failures", surfaceResumeMaxFailedAttempts)
+
+	app.service.UpsertInstance(&state.InstanceRecord{
+		InstanceID:    "inst-busy-1",
+		DisplayName:   "busy",
+		WorkspaceRoot: "/data/dl/droid",
+		WorkspaceKey:  "/data/dl/droid",
+		ShortName:     "busy",
+		Source:        "vscode",
+		Online:        true,
+		Threads: map[string]*state.ThreadRecord{
+			"thread-busy": {ThreadID: "thread-busy", Name: "占位会话", CWD: "/data/dl/droid", Loaded: true},
+		},
+	})
+	app.service.ApplySurfaceAction(control.Action{
+		Kind:             control.ActionAttachInstance,
+		SurfaceSessionID: "surface-busy",
+		ChatID:           "chat-busy",
+		ActorUserID:      "user-busy",
+		InstanceID:       "inst-busy-1",
+	})
+	app.service.ApplySurfaceAction(control.Action{
+		Kind:             control.ActionUseThread,
+		SurfaceSessionID: "surface-busy",
+		ChatID:           "chat-busy",
+		ActorUserID:      "user-busy",
+		ThreadID:         "thread-busy",
+	})
+	if recovery := app.surfaceResumeRuntime.recovery["surface-1"]; recovery != nil {
+		recovery.NextAttemptAt = time.Time{}
+	}
+
+	app.onTick(context.Background(), firstAttempt.Add(time.Minute))
+
+	if len(gateway.operations) != 1 {
+		t.Fatalf("expected later busy retry to stay silent after earlier launch failure, got %#v", gateway.operations)
+	}
+}
+
+func TestSurfaceResumeRecoverySyncPreservesBackoffForSameRecoveryTarget(t *testing.T) {
+	t.Parallel()
+
+	stateDir := t.TempDir()
+	putSurfaceResumeStateForTest(t, stateDir, surfaceresume.Entry{
+		SurfaceSessionID:   "surface-1",
+		GatewayID:          "app-1",
+		ChatID:             "chat-1",
+		ActorUserID:        "user-1",
+		ProductMode:        "normal",
+		Backend:            "codex",
+		CodexProviderID:    "default",
+		Verbosity:          "normal",
+		ResumeThreadID:     "thread-1",
+		ResumeThreadTitle:  "修复登录流程",
+		ResumeThreadCWD:    "/data/dl/droid",
+		ResumeWorkspaceKey: "/data/dl/droid",
+		ResumeRouteMode:    "pinned",
+		ResumeHeadless:     true,
+	})
+	app := newRestoreHintTestApp(stateDir)
+	now := time.Date(2026, 6, 5, 3, 20, 0, 0, time.UTC)
+	displayCode, emit := app.recordSurfaceResumeFailureLocked("surface-1", "headless_restore_start_timeout", now)
+	if !emit || displayCode != "headless_restore_start_timeout" {
+		t.Fatalf("expected first restore failure to emit, display=%q emit=%t", displayCode, emit)
+	}
+	before := app.surfaceResumeRuntime.recovery["surface-1"]
+	if before == nil || before.NextAttemptAt.IsZero() || before.LastNoticeCode == "" {
+		t.Fatalf("expected recovery backoff to be recorded, got %#v", before)
+	}
+
+	entry, ok := app.surfaceResumeRuntime.store.Get("surface-1")
+	if !ok {
+		t.Fatal("expected stored resume entry")
+	}
+	entry.ResumeThreadTitle = "修复登录流程 - 新标题"
+	entry.UpdatedAt = now.Add(time.Second)
+	if err := app.surfaceResumeRuntime.store.Put(entry); err != nil {
+		t.Fatalf("update surface resume state: %v", err)
+	}
+	app.syncSurfaceResumeRecoveryStateLocked()
+
+	after := app.surfaceResumeRuntime.recovery["surface-1"]
+	if after == nil {
+		t.Fatal("expected recovery state to remain")
+	}
+	if after.NextAttemptAt != before.NextAttemptAt || after.LastAttemptAt != before.LastAttemptAt || after.LastNoticeCode != before.LastNoticeCode || after.LastFailureCode != before.LastFailureCode {
+		t.Fatalf("expected same recovery target refresh to preserve backoff, before=%#v after=%#v", before, after)
+	}
+	if after.Entry.ResumeThreadTitle != "修复登录流程 - 新标题" {
+		t.Fatalf("expected refreshed entry metadata to update, got %#v", after.Entry)
 	}
 }
 

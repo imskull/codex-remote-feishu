@@ -1,8 +1,8 @@
 # Remote Surface 核心状态机
 
 > Type: `general`
-> Updated: `2026-06-03`
-> Summary: 当前实现同步了 workspace-aware headless 主链与 vscode 主链，并把当前 live 的 backend-aware 可见命令面收口到新的投影：`codex` 继续以 `workspace` 命令族作为主展示壳，`claude` 当前 live 实现把 `current_work` 收口到 `/new` 等当前工作动作，把 `switch_target` 收口到 `/workspace new dir`、`/workspace detach`、`/list`、`/use`，并把 `常用工具` 收口到 `/history` 与 `/sendfile`；裸 `/detach` 则退回 hidden + allow 兼容 alias。`send_settings` 则改成 backend 互斥入口：`codex headless` 可见 `/codexprovider`，`claude headless` 可见 `/claudeprofile`，`vscode` 两者都隐藏，且手动输入错误 backend 的命令也会显式拒绝。`/list` `/use` / target picker / workspace recency 全部只按当前 backend 过滤，且不再因为 surface/instance `ClaudeProfileID` 不同而隐藏 Claude workspace/session 候选；同时工作区一旦确定，`/use`、`/useall` 与锁定工作区的恢复 picker 现在都会带 `新建会话` fallback，而 `/list` 继续只做既有会话切换。2026-05-01 的新变化是：headless attach/reuse/restart/create/reject 已进一步收口成单一路径，visible 与 compatibility 继续拆层，但所有 consumer 现在都共享同一个 `desired surface contract vs observed instance contract` 解析核。结果是：
+> Updated: `2026-06-06`
+> Summary: 当前实现同步了 workspace-aware headless 主链与 vscode 主链，并把当前 live 的 backend-aware 可见命令面收口到新的投影：`codex` 继续以 `workspace` 命令族作为主展示壳，`claude` 当前 live 实现也把 `switch_target` 收口到同一套 `/workspace` 父页与 `切换 / 从目录新建 / 从 GIT URL 新建 / 从 Worktree 新建 / 解除接管` 五个入口，`current_work` 继续保留 `/new` 等当前工作动作，`常用工具` 继续收口到 `/history` 与 `/sendfile`；`/list`、`/use`、裸 `/detach` 则退回 hidden + allow 兼容 alias。`send_settings` 则改成 backend 互斥入口：`codex headless` 可见 `/codexprovider`，`claude headless` 可见 `/claudeprofile`，`vscode` 两者都隐藏，且手动输入错误 backend 的命令也会显式拒绝。`/list` `/use` / target picker / workspace recency 全部只按当前 backend 过滤，且不再因为 surface/instance `ClaudeProfileID` 不同而隐藏 Claude workspace/session 候选；同时工作区一旦确定，`/workspace list` 与 alias `/list` 现在会把 `新建会话` 置顶并默认选中，`/use`、`/useall` 与锁定工作区的恢复 picker 则继续保留 `新建会话` fallback。2026-06-06 的补充是：headless 与 vscode auto-resume 现在都有重试预算上限——同一根因连续失败 `surfaceResumeMaxFailedAttempts` 次后，surface 会停止自动轮询并只发一次「已停止自动恢复」交接提示（提示用户用 /list 或 /use 手动重选），直到恢复目标变化或 daemon 重启才重新武装。2026-06-05 的补充是：headless auto-resume 的运行态只在真实恢复目标身份变化时重置 backoff / last notice，标题、更新时间等非目标元数据刷新不会把同一失败 episode 重新刷成新失败；auto-restore 启动的 managed headless 一旦连回，若 exact-thread 接管失败，也会立刻终止本轮 `PendingHeadless`、kill 这次拉起的 headless，并保留持久化恢复目标等待后续 backoff 重试。2026-05-31 的补充是：headless auto-resume 现在把“恢复 episode 的稳定失败根因”与“后续 retry 观测到的派生 busy/not_found 状态”分开记账；provider/profile/runtime 这类启动前失败会保留为本轮恢复的 canonical cause，并且只有在真正恢复成功或 target 改变后才会清空，因此后续 retry 不会再把用户提示改写成误导性的 workspace/thread busy，也不会对同一根因重复刷失败卡。2026-05-01 的新变化是：headless attach/reuse/restart/create/reject 已进一步收口成单一路径，visible 与 compatibility 继续拆层，但所有 consumer 现在都共享同一个 `desired surface contract vs observed instance contract` 解析核。结果是：
 > 1. visible 但 contract mismatch 的 workspace/session 仍然可见，不会再被 `/list`、`/use`、workspace recency、target picker 直接吞掉；
 > 2. 这些 mismatch 候选不会再假装“可直接接管”；
 > 3. detached `/use`、headless exact-thread restore、workspace attach、startup resume、`/mode` backend switch、`/claudeprofile`、`/codexprovider` 现在都会统一先判定 `attach visible compatible / reuse managed compatible / restart managed incompatible / fresh-start matching headless / reject`，而不是各自维护平行 continuation；
@@ -145,6 +145,12 @@ surface 不是单一枚举，而是五层正交状态叠加。
       8. 这条 managed-headless exact-thread continuation 当前仍按 backend 生效：Codex 继续走 sqlite/persisted-thread + child-restore 语义；Claude 会把同 backend persisted session metadata 转成 launch-time `ResumeThreadID`，最终由 wrapper 用 `claude --resume <session_id>` 恢复旧 session。
       8. 若持久化目标里包含 `ResumeThreadID`，则在 daemon 启动后的首轮 `threads.refresh -> threads.snapshot` 完成前，会先保持 detached 并静默等待，避免过早降级或过早报失败。
       9. 若同时带着 `ResumeHeadless=true` 且 `ResumeInstanceID` 指向一个已连回的 visible instance，managed-headless exact-thread continuation 也会让出这一轮 startup refresh，先给 exact visible thread 恢复机会，避免刚收到 snapshot 前就抢先拉起新的 headless。
+      10. 同一条 persisted target 的 auto-resume 当前已经具备 episode 级失败 provenance：
+         1. daemon 仍会记录每次 retry 的最新 failure code 以驱动 backoff；
+         2. 但 `Codex Provider` / `Claude profile` / local runtime preflight 这类启动前失败会被提升成该 episode 的稳定根因，并在后续 retry 中继续沿用；
+         3. 只有真正恢复成功，或 persisted target / backend / profile/provider 发生变化时，才会清掉这份稳定根因；
+         4. 因此后续 retry 即使观测到 `workspace_busy` / `thread_busy` / `thread_not_found` 这类派生状态，也不会再把用户已看到的根因提示改写掉；同一根因在同一恢复 episode 里也不会重复刷失败卡。
+         5. daemon 同步恢复运行态时，只把 `surfaceID / ProductMode / Backend / provider/profile / ResumeInstanceID / ResumeThreadID / ResumeThreadCWD / ResumeWorkspaceKey / ResumeRouteMode / ResumeHeadless` 视为“恢复目标身份”；`ResumeThreadTitle`、gateway/chat/actor、verbosity、更新时间等展示或投递元数据变化只刷新 entry，不重置 `NextAttemptAt`、`LastNoticeCode` 或 sticky failure。
    5. `vscode` mode surface 会按 persisted `ResumeInstanceID` 继续尝试恢复：
       1. 先做本机 VS Code 兼容性检查：
          1. 若检测到旧版 `settings.json` override，或当前 managed shim 已失效，则保持 detached，并发迁移/修复卡片。
@@ -165,7 +171,7 @@ surface 不是单一枚举，而是五层正交状态叠加。
 5. `Abandoning` 仍是更高优先级 gate；但 `PendingHeadless` 不再阻塞 `/mode`，用户可以直接切到 `vscode` 终止恢复流程。
 6. 当前工作会话命令已经按主运行面分流：
    1. `codex` 的主展示命令是 `workspace` 命令族：`/workspace` / `/workspace new` 负责父页导航，`/workspace list` / `/workspace new dir` / `/workspace new git` / `/workspace new worktree` 打开四张独立业务卡；旧 `/list` / `/use` / `/useall` 只是 alias。
-   2. `claude` 的 visible MVP 继续复用同一套命令目录壳：`current_work` 保留 `/new`，`switch_target` 显式开放 `/workspace new dir`、`/workspace detach`、`/list`、`/use`，`常用工具` 显示 `/history` 与 `/sendfile`；裸 `/detach`、其余 `workspace*` 与 `/useall` 作为 hidden + allow 兼容入口继续复用同一工作区 / 会话壳；`/review` 与 `/bendtomywill` 当前已经退出 Claude 主展示面，回到 hidden + reject。
+   2. `claude` 的主展示也已收口到同一套 `workspace` 命令族：菜单里的 `switch_target` 现在和 `codex` 一样直接进入 `/workspace` 父页，并显示 `切换`、`从目录新建`、`从 GIT URL 新建`、`从 Worktree 新建`、`解除接管` 五个入口；`/list`、`/use`、`/useall` 继续保留为 hidden + allow 兼容 alias，`current_work` 仍保留 `/new`，`常用工具` 继续显示 `/history` 与 `/sendfile`；`/review` 与 `/bendtomywill` 当前已经退出 Claude 主展示面，回到 hidden + reject。
    3. `vscode` 主链继续列在线 VS Code instance。
 7. `Verbosity` 当前也是 surface 级偏好：
    1. `/verbose quiet|normal|verbose|chatty` 直接改当前 surface。
@@ -199,8 +205,8 @@ surface 不是单一枚举，而是五层正交状态叠加。
    3. 这张切换卡直接落在“工作区 + 会话”同页：
       1. 工作区候选只出现真实 workspace，不再混入动作型来源项。
       2. 工作区 label 足够时只显示 label；只有 basename 冲突时，才额外补路径 meta 做消歧。
-      3. 会话候选始终基于当前选中的 workspace 重新生成：`/workspace list` 与 alias `/list` 只列既有会话；`/use`、`/useall`、`show_workspace_threads` 与锁定当前工作区的恢复 picker 则会额外追加 `新建会话` fallback，避免坏会话把用户卡死。
-      4. session 只会在 surface 已经绑定到同一 thread 时保守预填；detached / unbound 即使只剩一个候选也不会自动代填。
+      3. 会话候选始终基于当前选中的 workspace 重新生成：`/workspace list` 与 alias `/list` 会把 `新建会话` 放在第一项，并继续保留已有会话列表；`/use`、`/useall`、`show_workspace_threads` 与锁定当前工作区的恢复 picker 则继续追加 `新建会话` fallback，避免坏会话把用户卡死。
+      4. session 默认值按 source 收口：`/workspace list` 与 alias `/list` 只要当前工作区允许 `new_thread` 就会默认选中新建会话；`/use` / `/useall` 仍只会在 surface 已经绑定到同一 thread 时保守预填该 thread，detached / unbound 即使只剩一个候选也不会自动代填。
       5. confirm 既有会话时，会复用现有 `/use` / cross-workspace attach 语义；必要时会先统一经过 `resolveWorkspaceContract(...)` 与对应的 workspace continuation owner，再落到 attach / restart-managed / fresh-start 的单一路径。
    4. `/workspace new dir`、`/workspace new git` 与 `/workspace new worktree` 是三张独立业务卡：
       1. `从目录新建` 主卡会显示路径字段、`选择目录` 按钮与 `接入并继续` 主按钮；`target_picker_open_path_picker` 会把主卡 inline replace 成目录模式 path picker，confirm/cancel 后再返回主卡。
@@ -734,7 +740,8 @@ review mode 第一版当前不是新的 route state，而是挂在 surface 上�
 6. 后台 auto-restore 触发的 pending headless 也复用同一个 `G1` gate：
    1. 启动阶段默认静默，不额外发 “headless_starting”。
    2. 成功后只发一条恢复成功 notice。
-   3. 失败或超时后只发一条恢复失败 notice，并回到 `R0 Detached`。
+   3. 若 managed headless 已连回但 exact-thread 接管失败，连接结果会被视为本轮 auto-restore 的 terminal outcome：清掉 `PendingHeadless`，kill 这次拉起的 headless，保留持久化恢复目标，并交给 daemon backoff 后再试。
+   4. 失败或超时后只发一条恢复失败 notice，并回到 `R0 Detached`。
 7. `PendingHeadless.AutoRestore=true` 时，手动 `/upgrade latest` 与允许 dev feed 的 flavor（源码 `dev` 与 release `alpha`）下的 `/upgrade dev` 检查结果 prompt 不再因为这条后台恢复占位被判成“当前窗口不空闲”；自动升级提示仍保持保守，不会优先挑这种 surface 弹卡。
 8. `Purpose=prompt_dispatch_restart` 的 attach 完成后不会重走 fresh workspace / exact-thread restore 的大路径；surface 只做最小 reattach，然后由统一 dispatch owner 继续原本那条 queued 或 auto-continue 发送，避免在“切推理强度”时把 queue/runtime 状态清空。
 
@@ -1389,6 +1396,7 @@ G1 PendingHeadlessStarting
   -- instance connected 且 pending.Purpose=fresh_workspace 且 pending.PrepareNewThread=true --> R5 NewThreadReady + G0 None
   -- instance connected 且 pending.ThreadID != "" 且非 auto-restore --> R2 AttachedPinned + G0 None
   -- instance connected 且 pending.ThreadID != "" 且 auto-restore --> R2 AttachedPinned + G0 None + 单条恢复成功 notice
+  -- instance connected 且 pending.ThreadID != "" 且 auto-restore exact-thread 接管失败 --> kill headless + clear pending + R0 Detached + 单条恢复失败 notice
   -- instance connected 且 pending.ThreadID == "" 且也不是 fresh_workspace（仅历史兼容兜底） --> kill headless + generic notice + G0 None
   -- /mode codex|claude|vscode（目标 backend 或 ProductMode 发生变化） --> kill headless + clear persisted resume target + G0 None + R0 Detached(目标 mode/backend)
   -- /detach --> kill headless + G0 None + R0 Detached
@@ -1500,6 +1508,12 @@ daemon startup 的 vscode resume 额外规则：
    2. 保持 `R0 Detached`
    3. 发恢复失败提示
    4. 进入 backoff
+10. headless launch 成功且实例连回后，如果 auto-restore exact-thread 接管失败：
+   1. 清掉 pending
+   2. kill 本轮 auto-restore 拉起的 headless
+   3. 保持 `R0 Detached`
+   4. 发恢复失败提示
+   5. 不清持久化恢复目标，由 daemon 运行态按 backoff 控制后续 retry；同目标 entry 的展示元数据刷新不会重置这份 backoff / last notice 状态
 
 ### 5.5 detach / abandoning 生命周期
 
@@ -1760,6 +1774,8 @@ retained-offline overlay 额外规则：
 37. **headless 主链的 detached backend 仍隐式回退 `codex`，导致 `codex` / `claude` 共用 workspace defaults、surface resume target 或恢复到错误 backend**：已修复。当前 surface 会单独持久化 `Backend`；`WorkspaceDefaults`、surface resume 与 detached catalog context 都按 backend 分区，旧数据缺失 backend 时 lazy 默认 `codex`，而 `codex <-> claude` 切换会显式清掉旧恢复目标。
 38. **Claude 早失败会把 surface 永久卡在 `dispatching`，且 `/detach` 还会被 pre-MVP gate 拒绝或只能进入无意义的 `abandoning`**：已修复。当前 Claude translator 会在首个 `assistant` / `control_request` / `result` 事件上提升 pending turn 并收口终态；若 surface 仍停在没有 `TurnID`、没有 output 的 pre-start dispatching，`/detach` 会直接失败 active item、清掉 pending remote ownership 并完成 detach；只有真实 started turn / compact / steer 才会进入 `E6 Abandoning`。
 39. **route / attach 上下文已经变化，但旧 workspace page / target picker / path picker / history / review picker 还要等“再点一次旧卡”才暴露失效，甚至出现第一次返回无效的假活状态**：已修复。当前 detach-like / route-change cleanup 会统一清掉 context-bound overlay runtime；只要仍有稳定 owner message，就会主动把旧卡封成失效态。若当前可见的是 target-picker-owned path picker 子步骤，则只 patch 这张可见子卡，隐藏父卡 runtime 静默清理；没有 anchor 的旧卡则继续按 callback fail-closed。
+40. **headless auto-resume 先因为 provider/profile/runtime 失败，再在后续 retry 上被 `workspace_busy` / `thread_busy` 覆盖成误导性根因，或每次 retry 都重复刷同一条失败卡**：已修复。当前恢复 runtime 会把“最新 retry 结果”和“本轮恢复的稳定失败根因”拆开记录；启动前失败会在真正恢复成功前一直保留为 canonical cause，后续派生 busy/not_found 只影响 backoff，不再改写用户提示；同一根因在同一恢复 episode 里也不会重复刷卡。
+41. **auto-restore 启动的 managed headless 已经连回，但 exact-thread 接管失败后，surface 仍保留 `PendingHeadless` 到启动超时，并且同一持久化目标的非目标元数据刷新会重置 daemon 侧失败节流，导致恢复失败提示反复刷屏**：已修复。当前连接后接管失败会立刻清掉本轮 pending、kill 这次拉起的 headless，并把缺 workspace/cwd 等接管失败归一到 `headless_restore_*` 恢复失败族；daemon 同步恢复运行态时只用真实恢复目标身份判断是否重置 backoff，标题/时间等元数据刷新不会让同一 episode 重新投影。
 
 当前审计范围内，未再发现“attach/use 成功后用户没有任何可恢复下一步”的 bug-grade 状态。
 

@@ -76,7 +76,7 @@ func TestResolveFeishuCommandDisplayGroupAppliesClaudeSupportProfile(t *testing.
 		Backend:     agentproto.BackendClaude,
 		ProductMode: "normal",
 	})
-	if got, want := resolvedDisplayCommands(switchTarget), []string{"/workspace new dir", "/workspace detach", "/list", "/use"}; !reflect.DeepEqual(got, want) {
+	if got, want := resolvedDisplayCommands(switchTarget), []string{"/workspace", "/workspace list", "/workspace new", "/workspace new dir", "/workspace new git", "/workspace new worktree", "/workspace detach"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("claude switch_target help commands = %#v, want %#v", got, want)
 	}
 
@@ -195,11 +195,22 @@ func TestResolveFeishuCommandDisplayProfileForContextUsesClaudeVisibleProfile(t 
 		Backend:     agentproto.BackendClaude,
 		ProductMode: "normal",
 	})
-	if !profile.IncludesFamily(FeishuCommandWorkspaceNewDir) ||
-		!profile.IncludesFamily(FeishuCommandWorkspaceDetach) ||
-		!profile.IncludesFamily(FeishuCommandList) ||
-		!profile.IncludesFamily(FeishuCommandUse) {
-		t.Fatalf("expected claude visible profile to include workspace_new_dir/workspace_detach/list/use, got %#v", profile.VisibleFamiliesForGroup(FeishuCommandGroupSwitchTarget))
+	if got, want := profile.VisibleFamiliesForGroup(FeishuCommandGroupSwitchTarget), []string{
+		FeishuCommandWorkspace,
+		FeishuCommandWorkspaceList,
+		FeishuCommandWorkspaceNew,
+		FeishuCommandWorkspaceNewDir,
+		FeishuCommandWorkspaceNewGit,
+		FeishuCommandWorkspaceNewWorktree,
+		FeishuCommandWorkspaceDetach,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected claude visible profile to align with workspace family, got %#v want %#v", got, want)
+	}
+	if profile.IncludesFamily(FeishuCommandList) {
+		t.Fatalf("expected claude visible profile to hide list, got %#v", profile.VisibleFamiliesForGroup(FeishuCommandGroupSwitchTarget))
+	}
+	if profile.IncludesFamily(FeishuCommandUse) {
+		t.Fatalf("expected claude visible profile to hide use, got %#v", profile.VisibleFamiliesForGroup(FeishuCommandGroupSwitchTarget))
 	}
 	if profile.IncludesFamily(FeishuCommandDetach) {
 		t.Fatalf("expected claude visible profile to hide detach, got %#v", profile.VisibleFamiliesForGroup(FeishuCommandGroupSwitchTarget))
@@ -224,6 +235,11 @@ func TestBuildFeishuCommandMenuHomePageUsesProfileAwareRootEntry(t *testing.T) {
 	vscode := BuildFeishuCommandMenuHomePageViewForContext(CatalogContext{ProductMode: "vscode"})
 	if got := commandTextForMenuHomeEntry(vscode, "工作区与会话"); got != "/menu switch_target" {
 		t.Fatalf("vscode switch_target home command = %q, want /menu switch_target", got)
+	}
+
+	claude := BuildFeishuCommandMenuHomePageViewForContext(CatalogContext{Backend: agentproto.BackendClaude, ProductMode: "normal"})
+	if got := commandTextForMenuHomeEntry(claude, "工作区与会话"); got != "/workspace" {
+		t.Fatalf("claude switch_target home command = %q, want /workspace", got)
 	}
 }
 

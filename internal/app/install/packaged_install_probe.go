@@ -2,6 +2,7 @@ package install
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ type PackagedInstallProbeResult struct {
 	SuggestedInstallBinDir  string `json:"suggestedInstallBinDir,omitempty"`
 	InstallLocationEditable bool   `json:"installLocationEditable,omitempty"`
 	ServiceManager          string `json:"serviceManager,omitempty"`
+	StartupMode             string `json:"startupMode,omitempty"`
 	Error                   string `json:"error,omitempty"`
 }
 
@@ -31,6 +33,7 @@ type packagedInstallProbeOptions struct {
 	StatePath              string
 	InstallerVersion       string
 	SuggestedInstallBinDir string
+	ResultFilePath         string
 	GOOS                   string
 	OutputFormat           string
 }
@@ -51,6 +54,7 @@ func RunPackagedInstallProbe(args []string, _ io.Reader, stdout, _ io.Writer, ve
 	currentVersion := flagSet.String("current-version", version, "installer version metadata used to compare same-version repair")
 	format := flagSet.String("format", "json", "output format: json or text")
 	jsonOutput := flagSet.Bool("json", false, "deprecated alias for -format json")
+	resultFile := flagSet.String("result-file", "", "optional machine-readable result file path for installer wrappers")
 
 	if err := flagSet.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -84,11 +88,18 @@ func RunPackagedInstallProbe(args []string, _ io.Reader, stdout, _ io.Writer, ve
 		StatePath:              resolvedStatePath,
 		InstallerVersion:       strings.TrimSpace(*currentVersion),
 		SuggestedInstallBinDir: resolveTargetInstallBinDir(selection, *installBinDir),
+		ResultFilePath:         strings.TrimSpace(*resultFile),
 		GOOS:                   defaults.GOOS,
 		OutputFormat:           outputFormat,
 	}
 
 	result, runErr := runPackagedInstallProbe(opts)
+	if resultFileErr := writePackagedInstallProbeResultFile(opts.ResultFilePath, result); resultFileErr != nil {
+		if runErr != nil {
+			return errors.Join(runErr, resultFileErr)
+		}
+		return resultFileErr
+	}
 	if outputErr := writePackagedInstallProbeResult(stdout, outputFormat, result); outputErr != nil {
 		return outputErr
 	}
@@ -108,6 +119,7 @@ func runPackagedInstallProbe(opts packagedInstallProbeOptions) (PackagedInstallP
 	if manager, ok := managedServiceManagerForGOOS(opts.GOOS); ok {
 		result.ServiceManager = string(manager)
 	}
+	result.StartupMode = string(packagedInstallStartupModeForManager(packagedInstallFirstInstallServiceManager(opts.GOOS)))
 	if strings.TrimSpace(opts.StatePath) == "" {
 		err := fmt.Errorf("state path is required")
 		result.Error = err.Error()
@@ -153,6 +165,7 @@ func packagedInstallProbeResultForState(state InstallState, opts packagedInstall
 		SuggestedInstallBinDir:  currentInstallBinDir,
 		InstallLocationEditable: false,
 		ServiceManager:          string(effectiveServiceManager(state)),
+		StartupMode:             string(packagedInstallStartupModeForManager(effectiveServiceManager(state))),
 	}
 }
 
@@ -199,6 +212,11 @@ func writePackagedInstallProbeResult(stdout io.Writer, format string, result Pac
 		}
 		if result.ServiceManager != "" {
 			if _, err := fmt.Fprintf(stdout, "service manager: %s\n", result.ServiceManager); err != nil {
+				return err
+			}
+		}
+		if result.StartupMode != "" {
+			if _, err := fmt.Fprintf(stdout, "startup mode: %s\n", result.StartupMode); err != nil {
 				return err
 			}
 		}

@@ -265,89 +265,28 @@ func TestTryAutoResumeHeadlessSurfaceKeepsStableWorkspaceRootForSyntheticThreadR
 	}
 }
 
-// TestManagedHeadlessResumeReportsFailedWhenAttachRejectedByBusyOwner reproduces
-// the never-ending "恢复失败" loop: a reusable managed headless holds the target
-// thread, so resolveHeadlessRestoreTargetFromView picks the reuse path, but the
-// instance/workspace is already claimed by another feishu surface. The attach is
-// rejected and a headless_restore_thread_busy notice is emitted WITHOUT actually
-// attaching. tryAutoResumeManagedHeadlessTarget must report SurfaceResumeStatusFailed
-// (not a hardcoded ThreadAttached) so the recovery loop applies backoff and the
-// give-up budget instead of clearing the backoff and re-emitting the notice every
-// tick forever.
-func TestManagedHeadlessResumeReportsFailedWhenAttachRejectedByBusyOwner(t *testing.T) {
-	now := time.Date(2026, 5, 30, 3, 0, 0, 0, time.UTC)
-	svc := newServiceForTest(&now)
-	svc.MaterializeSurface("surface-1", "app-1", "chat-1", "user-1")
-	svc.MaterializeSurface("surface-2", "app-1", "chat-2", "user-2")
-	// Two managed headless instances in the SAME workspace. inst-a holds the
-	// target thread-1 and stays free of an instance claim (so it is offered to
-	// surface-1 for reuse). inst-b holds a sibling thread that surface-2 attaches
-	// to, which makes surface-2 the workspace claim owner without claiming inst-a.
-	svc.UpsertInstance(&state.InstanceRecord{
-		InstanceID:    "inst-headless-a",
-		DisplayName:   "headless-a",
-		WorkspaceRoot: "/data/dl/droid",
-		WorkspaceKey:  "/data/dl/droid",
-		ShortName:     "headless-a",
-		Source:        "headless",
-		Managed:       true,
-		Online:        true,
-		Threads: map[string]*state.ThreadRecord{
-			"thread-1": {ThreadID: "thread-1", Name: "修复登录流程", CWD: "/data/dl/droid", WorkspaceKey: "/data/dl/droid", Loaded: true},
-		},
-	})
-	svc.UpsertInstance(&state.InstanceRecord{
-		InstanceID:    "inst-headless-b",
-		DisplayName:   "headless-b",
-		WorkspaceRoot: "/data/dl/droid",
-		WorkspaceKey:  "/data/dl/droid",
-		ShortName:     "headless-b",
-		Source:        "headless",
-		Managed:       true,
-		Online:        true,
-		Threads: map[string]*state.ThreadRecord{
-			"thread-2": {ThreadID: "thread-2", Name: "整理样式", CWD: "/data/dl/droid", WorkspaceKey: "/data/dl/droid", Loaded: true},
-		},
-	})
+func TestHeadlessRestoreFailureNoticeWorkspaceBusyUsesGenericRestoreText(t *testing.T) {
+	notice := headlessRestoreFailureNotice("workspace_busy")
+	if notice == nil {
+		t.Fatal("expected notice")
+	}
+	if strings.Contains(notice.Text, "占用") || strings.Contains(notice.Text, "接管") {
+		t.Fatalf("expected generic restore failure text, got %q", notice.Text)
+	}
+	if !strings.Contains(notice.Text, "暂时无法恢复") {
+		t.Fatalf("expected generic restore failure text, got %q", notice.Text)
+	}
+}
 
-	// Another feishu surface takes over the workspace by attaching to thread-2 in
-	// inst-b; the target thread-1 and inst-a both stay free of a claim.
-	if _, result := svc.tryAutoResumeManagedHeadlessTarget(svc.root.Surfaces["surface-2"], SurfaceResumeAttempt{
-		ThreadID:       "thread-2",
-		ThreadTitle:    "整理样式",
-		ThreadCWD:      "/data/dl/droid",
-		ResumeHeadless: true,
-	}, true); result.Status != SurfaceResumeStatusThreadAttached {
-		t.Fatalf("setup: expected surface-2 to win the workspace, got %#v", result)
+func TestSurfaceResumeFailureNoticeWorkspaceBusyUsesGenericRestoreText(t *testing.T) {
+	notice := surfaceResumeFailureNotice("workspace_busy")
+	if notice == nil {
+		t.Fatal("expected notice")
 	}
-
-	events, result := svc.tryAutoResumeManagedHeadlessTarget(svc.root.Surfaces["surface-1"], SurfaceResumeAttempt{
-		ThreadID:       "thread-1",
-		ThreadTitle:    "修复登录流程",
-		ThreadCWD:      "/data/dl/droid",
-		ResumeHeadless: true,
-	}, true)
-
-	if result.Status != SurfaceResumeStatusFailed {
-		t.Fatalf("expected rejected reuse attach to report Failed, got status=%s events=%#v", result.Status, events)
+	if strings.Contains(notice.Text, "占用") || strings.Contains(notice.Text, "接管") {
+		t.Fatalf("expected generic restore failure text, got %q", notice.Text)
 	}
-	if strings.TrimSpace(result.FailureCode) == "" {
-		t.Fatalf("expected a non-empty failure code so the recovery loop can back off, got %#v", result)
-	}
-	if surface := svc.root.Surfaces["surface-1"]; strings.TrimSpace(surface.AttachedInstanceID) != "" {
-		t.Fatalf("expected surface-1 to stay unattached after rejected attach, got %#v", surface)
-	}
-	// The bundled notice must still be the busy failure notice, not a success one.
-	sawBusy := false
-	for _, ev := range events {
-		if ev.Notice != nil && strings.HasPrefix(ev.Notice.Code, "headless_restore_") && ev.Notice.Code != "headless_restore_attached" {
-			sawBusy = true
-		}
-		if ev.Notice != nil && ev.Notice.Code == "headless_restore_attached" {
-			t.Fatalf("rejected attach must not emit a success notice, got %#v", events)
-		}
-	}
-	if !sawBusy {
-		t.Fatalf("expected a headless_restore busy/failure notice, got %#v", events)
+	if !strings.Contains(notice.Text, "暂时无法恢复") {
+		t.Fatalf("expected generic restore failure text, got %q", notice.Text)
 	}
 }

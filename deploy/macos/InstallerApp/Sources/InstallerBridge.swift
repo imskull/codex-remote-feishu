@@ -55,7 +55,6 @@ final class InstallerBridge {
                 "-binary", binaryURL.path,
                 "-current-version", metadata.version,
                 "-current-track", metadata.track,
-                "-service-manager", "launchd_user",
                 "-format", "text",
                 "-result-file", resultFileURL.path,
             ]
@@ -125,6 +124,14 @@ final class InstallerBridge {
             return
         }
         NSWorkspace.shared.open(url)
+    }
+
+    func openFilePath(_ rawValue: String) {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: trimmed))
     }
 
     private func selectedPayloadBinaryURL() throws -> URL {
@@ -266,6 +273,8 @@ final class InstallerBridge {
                 result.installedBinary = value
             case "serviceManager":
                 result.serviceManager = value
+            case "startupMode":
+                result.startupMode = value
             case "currentVersion":
                 result.currentVersion = value
             case "currentTrack":

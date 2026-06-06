@@ -9,12 +9,16 @@ on:
       - "install-release.ps1"
       - "scripts/check/smoke-install-release.sh"
       - "scripts/check/smoke-install-release.ps1"
+      - "scripts/check/smoke-macos-installer-result-model.sh"
+      - "scripts/check/smoke-windows-nsis-installer.ps1"
       - "scripts/release/build-artifacts.sh"
+      - "scripts/release/build-windows-nsis.sh"
       - "scripts/release/build-macos-installer-app.sh"
       - "scripts/release/build-macos-dmg.sh"
       - "scripts/release/build-macos-packaged-installer.sh"
       - "scripts/release/write-checksums.sh"
       - "scripts/web/build-admin-ui.sh"
+      - "deploy/windows/**"
       - "deploy/macos/**"
       - "internal/app/install/**"
       - "internal/app/launcher/**"
@@ -29,12 +33,16 @@ on:
       - "install-release.ps1"
       - "scripts/check/smoke-install-release.sh"
       - "scripts/check/smoke-install-release.ps1"
+      - "scripts/check/smoke-macos-installer-result-model.sh"
+      - "scripts/check/smoke-windows-nsis-installer.ps1"
       - "scripts/release/build-artifacts.sh"
+      - "scripts/release/build-windows-nsis.sh"
       - "scripts/release/build-macos-installer-app.sh"
       - "scripts/release/build-macos-dmg.sh"
       - "scripts/release/build-macos-packaged-installer.sh"
       - "scripts/release/write-checksums.sh"
       - "scripts/web/build-admin-ui.sh"
+      - "deploy/windows/**"
       - "deploy/macos/**"
       - "internal/app/install/**"
       - "internal/app/launcher/**"
@@ -75,6 +83,11 @@ jobs:
         with:
           go-version: ${{ steps.go_version.outputs.version }}
 
+      - name: Install NSIS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+
       - name: Install web dependencies
         working-directory: web
         run: npm ci
@@ -88,6 +101,20 @@ jobs:
         env:
           CODEX_REMOTE_BUILD_FLAVOR: shipping
         run: bash scripts/release/build-artifacts.sh v0.1.0-beta.1 dist-beta --skip-admin-ui-build
+
+      - name: Build production Windows NSIS installer
+        run: |
+          bash scripts/release/build-windows-nsis.sh \
+            --version v0.0.0 \
+            --track production \
+            --dist-dir dist-production
+
+      - name: Build beta Windows NSIS installer
+        run: |
+          bash scripts/release/build-windows-nsis.sh \
+            --version v0.1.0-beta.1 \
+            --track beta \
+            --dist-dir dist-beta
 
       - name: Upload production fixture
         uses: actions/upload-artifact@v4
@@ -111,6 +138,22 @@ jobs:
           name: installer-smoke-beta
           path: dist-beta
           if-no-files-found: error
+
+      - name: Upload production Windows NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-smoke-prod-windows-nsis
+          path: dist-production/codex-remote-feishu_0.0.0_windows_amd64_installer.exe
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload beta Windows NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-smoke-beta-windows-nsis
+          path: dist-beta/codex-remote-feishu_0.1.0-beta.1_windows_amd64_installer.exe
+          if-no-files-found: error
+          compression-level: 0
 
       - name: Upload beta macOS packaging fixture
         uses: actions/upload-artifact@v4
@@ -175,6 +218,18 @@ jobs:
           name: installer-smoke-beta
           path: ${{ runner.temp }}\installer-smoke\beta
 
+      - name: Download production Windows NSIS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-smoke-prod-windows-nsis
+          path: ${{ runner.temp }}\installer-smoke\nsis\prod
+
+      - name: Download beta Windows NSIS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-smoke-beta-windows-nsis
+          path: ${{ runner.temp }}\installer-smoke\nsis\beta
+
       - name: Smoke test PowerShell installer
         shell: pwsh
         run: |
@@ -184,6 +239,13 @@ jobs:
             -ProdDistDir "$env:RUNNER_TEMP\installer-smoke\prod" `
             -BetaDistDir "$env:RUNNER_TEMP\installer-smoke\beta"
 
+      - name: Smoke test Windows NSIS installer
+        shell: pwsh
+        run: |
+          ./scripts/check/smoke-windows-nsis-installer.ps1 `
+            -ProdInstallerPath "$env:RUNNER_TEMP\installer-smoke\nsis\prod\codex-remote-feishu_0.0.0_windows_amd64_installer.exe" `
+            -BetaInstallerPath "$env:RUNNER_TEMP\installer-smoke\nsis\beta\codex-remote-feishu_0.1.0-beta.1_windows_amd64_installer.exe"
+
   build-macos-packaged-installer:
     needs: build-fixtures
     runs-on: macos-latest
@@ -191,6 +253,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Smoke macOS installer result model
+        run: bash scripts/check/smoke-macos-installer-result-model.sh
 
       - name: Download production fixture
         uses: actions/download-artifact@v4

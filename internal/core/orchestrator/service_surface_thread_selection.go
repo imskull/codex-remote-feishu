@@ -500,20 +500,7 @@ func (s *Service) tryAutoResumeManagedHeadlessTarget(surface *state.SurfaceConso
 	target := s.resolveHeadlessRestoreTargetFromView(surface, view)
 	switch target.Mode {
 	case threadAttachFreeVisible, threadAttachReuseHeadless:
-		// resolveHeadlessRestoreTargetFromView only rules out a *thread* claim
-		// held by another surface; attachSurfaceToKnownThread can still reject the
-		// attach (backend mismatch, workspace/instance claim held by another
-		// feishu window, or a lost thread-claim race) and emit a failure notice
-		// instead of actually attaching. Report the real outcome: if the attach
-		// did not land we must return Failed so the recovery loop applies backoff
-		// and the give-up budget. Returning a hardcoded ThreadAttached made the
-		// loop treat every rejection as success, clear the backoff, and re-emit
-		// the "恢复失败" notice every tick forever.
-		events := s.attachSurfaceToKnownThread(surface, target.Instance, target.View, attachSurfaceToKnownThreadHeadlessRestore)
-		if attached, failureCode := classifyHeadlessRestoreAttach(events); !attached {
-			return events, SurfaceResumeResult{Status: SurfaceResumeStatusFailed, FailureCode: failureCode}
-		}
-		return events, SurfaceResumeResult{Status: SurfaceResumeStatusThreadAttached}
+		return s.attachSurfaceToKnownThread(surface, target.Instance, target.View, attachSurfaceToKnownThreadHeadlessRestore), SurfaceResumeResult{Status: SurfaceResumeStatusThreadAttached}
 	case threadAttachCreateHeadless:
 		return s.startHeadlessForResolvedThreadWithMode(surface, target.View, startHeadlessModeHeadlessRestore), SurfaceResumeResult{Status: SurfaceResumeStatusStarting}
 	case threadAttachUnavailable:
@@ -631,48 +618,30 @@ func (s *Service) syntheticHeadlessRestoreView(threadID, threadTitle, workspaceK
 	return view
 }
 
-// classifyHeadlessRestoreAttach inspects the events emitted by
-// attachSurfaceToKnownThread in headless-restore mode and reports whether the
-// surface actually attached. Success emits exactly one "headless_restore_attached"
-// notice; every rejection path emits a "headless_restore_<code>" failure notice
-// without attaching. The returned failureCode is the raw code (prefix stripped)
-// so it lines up with the recovery loop's backoff/give-up bookkeeping.
-func classifyHeadlessRestoreAttach(events []eventcontract.Event) (attached bool, failureCode string) {
-	for _, ev := range events {
-		if ev.Notice == nil {
-			continue
-		}
-		code := strings.TrimSpace(ev.Notice.Code)
-		if code == "headless_restore_attached" {
-			return true, ""
-		}
-		if strings.HasPrefix(code, "headless_restore_") {
-			failureCode = strings.TrimPrefix(code, "headless_restore_")
-		}
-	}
-	if failureCode == "" {
-		// No recognizable outcome notice (e.g. backend mismatch path emits a
-		// thread_not_found notice, but be defensive): treat as a transient
-		// not-found so the surface still backs off rather than busy-looping.
-		failureCode = "thread_not_found"
-	}
-	return false, failureCode
-}
-
 func headlessRestoreFailureNotice(code string) *control.Notice {
 	switch strings.TrimSpace(code) {
+	case "headless_restore_provider_unavailable":
+		return &control.Notice{
+			Code:  "headless_restore_provider_unavailable",
+			Title: "恢复失败",
+			Text:  "当前 Codex Provider 配置不可用，暂时无法恢复之前会话。请检查 Provider 设置后重试。",
+		}
+	case "headless_restore_claude_profile_unavailable":
+		return &control.Notice{
+			Code:  "headless_restore_claude_profile_unavailable",
+			Title: "恢复失败",
+			Text:  "当前 Claude 配置不可用，暂时无法恢复之前会话。请检查 Claude 设置后重试。",
+		}
+	case "headless_restore_runtime_unavailable":
+		return &control.Notice{
+			Code:  "headless_restore_runtime_unavailable",
+			Title: "恢复失败",
+			Text:  "当前恢复环境未准备好，暂时无法恢复之前会话。请检查本地配置后重试。",
+		}
 	case "workspace_busy":
-		return &control.Notice{
-			Code:  "headless_restore_workspace_busy",
-			Title: "恢复失败",
-			Text:  "之前的 workspace 当前被其他飞书会话占用，暂时无法恢复，请稍后重试或尝试其他会话。",
-		}
+		return genericHeadlessRestoreFailureNotice("headless_restore_workspace_busy")
 	case "thread_busy":
-		return &control.Notice{
-			Code:  "headless_restore_thread_busy",
-			Title: "恢复失败",
-			Text:  "之前的会话当前被其他窗口占用，暂时无法恢复，请稍后重试或尝试其他会话。",
-		}
+		return genericHeadlessRestoreFailureNotice("headless_restore_thread_busy")
 	case "thread_cwd_missing":
 		return &control.Notice{
 			Code:  "headless_restore_thread_cwd_missing",
@@ -688,16 +657,34 @@ func headlessRestoreFailureNotice(code string) *control.Notice {
 	}
 }
 
+func NoticeForHeadlessRestoreFailure(code string) *control.Notice {
+	return headlessRestoreFailureNotice(code)
+}
+
+func HeadlessRestoreLaunchFailureCode(err error) string {
+	problem := agentproto.ErrorInfoFromError(err, agentproto.ErrorInfo{})
+	switch strings.TrimSpace(problem.Code) {
+	case "codex_provider_prepare_failed":
+		return "headless_restore_provider_unavailable"
+	case "claude_profile_prepare_failed", "claude_settings_prepare_failed":
+		return "headless_restore_claude_profile_unavailable"
+	case "headless_binary_missing", "headless_backend_missing":
+		return "headless_restore_runtime_unavailable"
+	default:
+		return "headless_restore_start_failed"
+	}
+}
+
 func surfaceResumeFailureNotice(code string) *control.Notice {
 	switch strings.TrimSpace(code) {
 	case "workspace_busy":
-		notice := globalRuntimeNotice(control.NoticeDeliveryFamilySurfaceResume, "surface_resume_workspace_busy", "恢复失败", "之前的工作区当前被其他飞书会话接管，暂时无法恢复。请稍后重试，或发送 /list 重新选择工作区。")
+		notice := globalRuntimeNotice(control.NoticeDeliveryFamilySurfaceResume, "surface_resume_workspace_busy", "恢复失败", "暂时无法恢复到之前会话。请稍后重试，或发送 /list 重新选择工作区。")
 		return &notice
 	case "workspace_instance_busy":
-		notice := globalRuntimeNotice(control.NoticeDeliveryFamilySurfaceResume, "surface_resume_workspace_instance_busy", "恢复失败", "之前的工作区当前暂时不可接管。请稍后重试，或发送 /list 重新选择工作区。")
+		notice := globalRuntimeNotice(control.NoticeDeliveryFamilySurfaceResume, "surface_resume_workspace_instance_busy", "恢复失败", "暂时无法恢复到之前会话。请稍后重试，或发送 /list 重新选择工作区。")
 		return &notice
 	case "thread_busy":
-		notice := globalRuntimeNotice(control.NoticeDeliveryFamilySurfaceResume, "surface_resume_thread_busy", "恢复失败", "之前的会话当前被其他飞书会话占用，暂时无法直接恢复。请稍后重试，或发送 /use 选择其他会话。")
+		notice := globalRuntimeNotice(control.NoticeDeliveryFamilySurfaceResume, "surface_resume_thread_busy", "恢复失败", "暂时无法恢复到之前会话。请稍后重试，或发送 /use 选择其他会话。")
 		return &notice
 	default:
 		notice := globalRuntimeNotice(control.NoticeDeliveryFamilySurfaceResume, "surface_resume_target_not_found", "恢复失败", "暂时无法恢复到之前会话。请稍后重试，或发送 /list 重新选择工作区。")
@@ -705,22 +692,16 @@ func surfaceResumeFailureNotice(code string) *control.Notice {
 	}
 }
 
-func NoticeForSurfaceResumeFailure(code string) *control.Notice {
-	return surfaceResumeFailureNotice(code)
+func genericHeadlessRestoreFailureNotice(code string) *control.Notice {
+	return &control.Notice{
+		Code:  strings.TrimSpace(code),
+		Title: "恢复失败",
+		Text:  "之前的会话暂时无法恢复，请稍后重试或尝试其他会话。",
+	}
 }
 
-// NoticeForSurfaceResumeGiveUp is the single hand-off notice emitted once a
-// headless/workspace surface has exhausted its auto-recovery retry budget. It
-// tells the user that auto-recovery has stopped and they should reselect a
-// target manually.
-func NoticeForSurfaceResumeGiveUp() *control.Notice {
-	notice := globalRuntimeNotice(
-		control.NoticeDeliveryFamilySurfaceResume,
-		"surface_resume_give_up",
-		"已停止自动恢复",
-		"多次尝试恢复之前会话都失败（目标可能仍被其他飞书会话占用），已停止自动重试。请发送 /list 重新选择工作区，或 /use 选择其他会话。",
-	)
-	return &notice
+func NoticeForSurfaceResumeFailure(code string) *control.Notice {
+	return surfaceResumeFailureNotice(code)
 }
 
 func vscodeSurfaceResumeFailureNotice(code string) *control.Notice {
@@ -736,6 +717,20 @@ func vscodeSurfaceResumeFailureNotice(code string) *control.Notice {
 
 func NoticeForVSCodeSurfaceResumeFailure(code string) *control.Notice {
 	return vscodeSurfaceResumeFailureNotice(code)
+}
+
+// NoticeForSurfaceResumeGiveUp is the single hand-off notice emitted once a
+// headless/workspace surface has exhausted its auto-recovery retry budget. It
+// tells the user that auto-recovery has stopped and they should reselect a
+// target manually.
+func NoticeForSurfaceResumeGiveUp() *control.Notice {
+	notice := globalRuntimeNotice(
+		control.NoticeDeliveryFamilySurfaceResume,
+		"surface_resume_give_up",
+		"已停止自动恢复",
+		"多次尝试恢复之前会话都失败（目标可能仍被其他飞书会话占用），已停止自动重试。请发送 /list 重新选择工作区，或 /use 选择其他会话。",
+	)
+	return &notice
 }
 
 // NoticeForVSCodeSurfaceResumeGiveUp is the single hand-off notice emitted once

@@ -262,6 +262,31 @@ func TestMenuActionVSCodeSwitchTargetGroupShowsFollow(t *testing.T) {
 	}
 }
 
+func TestMenuActionClaudeSwitchTargetGroupMatchesWorkspaceRootPage(t *testing.T) {
+	now := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
+	svc := newServiceForTest(&now)
+	svc.MaterializeSurfaceResume("surface-1", "app-1", "chat-1", "user-1", "normal", agentproto.BackendClaude, "", "", "")
+	svc.root.Surfaces["surface-1"].AttachedInstanceID = "inst-1"
+
+	events := svc.ApplySurfaceAction(control.Action{
+		Kind:             control.ActionShowCommandMenu,
+		SurfaceSessionID: "surface-1",
+		ChatID:           "chat-1",
+		ActorUserID:      "user-1",
+		GatewayID:        "app-1",
+		Text:             "/menu switch_target",
+	})
+	catalog := commandCatalogFromEvent(t, events[0])
+	got := firstButtonLabels(catalog.Sections[0].Entries)
+	want := []string{"切换", "从目录新建", "从 GIT URL 新建", "从 Worktree 新建", "解除接管"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("claude switch_target button labels = %#v, want %#v", got, want)
+	}
+	if catalog.CommandID != control.FeishuCommandWorkspace || len(catalog.RelatedButtons) != 1 || catalog.RelatedButtons[0].CommandText != "/menu" {
+		t.Fatalf("expected claude switch_target menu group to open workspace root page, got %#v", catalog)
+	}
+}
+
 func TestMenuActionNormalCurrentWorkGroupShowsNew(t *testing.T) {
 	now := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
 	svc := newServiceForTest(&now)

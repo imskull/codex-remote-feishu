@@ -49,6 +49,9 @@ func TestRunPackagedInstallProbeFirstInstallReturnsEditableDefaultDir(t *testing
 			t.Fatalf("ServiceManager = %q, want %q", result.ServiceManager, manager)
 		}
 	}
+	if result.StartupMode != string(PackagedInstallStartupModeLoginAutostart) {
+		t.Fatalf("StartupMode = %q, want login_autostart", result.StartupMode)
+	}
 }
 
 func TestRunPackagedInstallProbeRepairReturnsLockedDirAndSameVersion(t *testing.T) {
@@ -114,4 +117,77 @@ func TestRunPackagedInstallProbeRepairReturnsLockedDirAndSameVersion(t *testing.
 	if result.ServiceManager != string(ServiceManagerDetached) {
 		t.Fatalf("ServiceManager = %q, want detached", result.ServiceManager)
 	}
+	if result.StartupMode != string(PackagedInstallStartupModeManual) {
+		t.Fatalf("StartupMode = %q, want manual", result.StartupMode)
+	}
+}
+
+func TestRunPackagedInstallProbeWritesResultFileForFirstInstall(t *testing.T) {
+	t.Setenv(repoRootEnvVar, t.TempDir())
+	baseDir := t.TempDir()
+	resultFile := filepath.Join(baseDir, "result", "packaged-install-probe.ini")
+
+	var stdout bytes.Buffer
+	if err := RunPackagedInstallProbe([]string{
+		"-base-dir", baseDir,
+		"-current-version", "v1.2.3",
+		"-format", "json",
+		"-result-file", resultFile,
+	}, bytes.NewBuffer(nil), &stdout, &bytes.Buffer{}, "vtest"); err != nil {
+		t.Fatalf("RunPackagedInstallProbe first install: %v", err)
+	}
+
+	assertPackagedInstallResultFileContains(t, resultFile,
+		"ok=true",
+		"mode=first_install",
+		"installerVersion=v1.2.3",
+		"sameVersion=false",
+		"installLocationEditable=true",
+		"startupMode=login_autostart",
+	)
+}
+
+func TestRunPackagedInstallProbeWritesResultFileForRepair(t *testing.T) {
+	t.Setenv(repoRootEnvVar, t.TempDir())
+	baseDir := t.TempDir()
+	statePath := defaultInstallStatePathForInstance(baseDir, defaultInstanceID)
+	resultFile := filepath.Join(baseDir, "result", "packaged-install-probe.ini")
+	liveBinary := seedBinary(t, filepath.Join(baseDir, "installed-bin", executableName(runtime.GOOS)), "current-binary")
+	if err := WriteState(statePath, InstallState{
+		InstanceID:        defaultInstanceID,
+		BaseDir:           baseDir,
+		ConfigPath:        defaultConfigPathForInstance(baseDir, defaultInstanceID),
+		StatePath:         statePath,
+		ServiceManager:    ServiceManagerDetached,
+		InstallSource:     InstallSourceRelease,
+		CurrentTrack:      ReleaseTrackBeta,
+		CurrentVersion:    "v2.0.0-beta.1",
+		CurrentBinaryPath: liveBinary,
+		InstalledBinary:   liveBinary,
+		VersionsRoot:      filepath.Join(baseDir, "releases"),
+		CurrentSlot:       "v2.0.0-beta.1",
+	}); err != nil {
+		t.Fatalf("WriteState: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := RunPackagedInstallProbe([]string{
+		"-state-path", statePath,
+		"-current-version", "v2.0.0-beta.1",
+		"-format", "json",
+		"-result-file", resultFile,
+	}, bytes.NewBuffer(nil), &stdout, &bytes.Buffer{}, "vtest"); err != nil {
+		t.Fatalf("RunPackagedInstallProbe repair: %v", err)
+	}
+
+	assertPackagedInstallResultFileContains(t, resultFile,
+		"ok=true",
+		"mode=repair",
+		"currentVersion=v2.0.0-beta.1",
+		"currentTrack=beta",
+		"sameVersion=true",
+		"installLocationEditable=false",
+		"serviceManager=detached",
+		"startupMode=manual",
+	)
 }

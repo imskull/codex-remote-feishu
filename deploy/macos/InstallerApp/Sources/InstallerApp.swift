@@ -47,6 +47,7 @@ final class InstallerViewController: NSViewController {
     private let titleLabel = NSTextField(labelWithString: "")
     private let summaryLabel = NSTextField(wrappingLabelWithString: "")
     private let detailLabel = NSTextField(wrappingLabelWithString: "")
+    private let infoLabel = NSTextField(wrappingLabelWithString: "")
     private let locationTitleLabel = NSTextField(labelWithString: "安装位置")
     private let locationField = NSTextField(string: "")
     private let locationHintLabel = NSTextField(wrappingLabelWithString: "")
@@ -58,6 +59,8 @@ final class InstallerViewController: NSViewController {
     private let progressIndicator = NSProgressIndicator()
     private let logTextView = NSTextView()
     private let logScrollView = NSScrollView()
+    private let auxiliaryActionsStack = NSStackView()
+    private var auxiliaryActionsByTag: [Int: InstallerResultPageAction] = [:]
     private lazy var primaryButton: NSButton = {
         let button = NSButton(title: "继续", target: self, action: #selector(primaryAction))
         button.bezelStyle = .rounded
@@ -86,17 +89,8 @@ final class InstallerViewController: NSViewController {
         switch screenState {
         case .ready:
             beginInstall()
-        case .success(let result):
-            if result.setupRequired, !result.setupURL.isEmpty {
-                bridge.openURL(result.setupURL)
-            } else if !result.adminURL.isEmpty {
-                bridge.openURL(result.adminURL)
-            } else {
-                NSApp.terminate(nil)
-            }
-        case .failure:
-            clearLog()
-            startProbe()
+        case .result(let model):
+            performPrimaryResultAction(model.primaryAction)
         case .loading, .installing:
             break
         }
@@ -140,9 +134,10 @@ final class InstallerViewController: NSViewController {
             } catch {
                 DispatchQueue.main.async {
                     self.plan = nil
-                    self.screenState = .failure(InstallerFailureState(
+                    self.screenState = .result(InstallerResultPageModel.fromFailure(
                         message: error.localizedDescription,
-                        detail: "安装器暂时无法完成当前环境探测。请确认嵌入 payload 可执行、版本资源存在，并查看下方过程日志。"
+                        detail: "安装器暂时无法完成当前环境探测。请确认嵌入 payload 可执行、版本资源存在，并查看下方过程日志。",
+                        logPath: ""
                     ))
                     self.render()
                 }
@@ -172,18 +167,19 @@ final class InstallerViewController: NSViewController {
                 switch result {
                 case .success(let summary):
                     if summary.result.ok {
-                        if summary.result.setupRequired, !summary.result.setupURL.isEmpty {
-                            self.bridge.openURL(summary.result.setupURL)
-                        }
-                        self.screenState = .success(summary.result)
+                        self.screenState = .result(InstallerResultPageModel.fromSuccess(
+                            probe: plan.probe,
+                            result: summary.result
+                        ))
                     } else {
-                        self.screenState = .failure(self.failureState(from: summary))
+                        self.screenState = .result(self.failureResultModel(from: summary))
                     }
                     self.render()
                 case .failure(let error):
-                    self.screenState = .failure(InstallerFailureState(
+                    self.screenState = .result(InstallerResultPageModel.fromFailure(
                         message: error.localizedDescription,
-                        detail: "安装器没有拿到有效结果文件。请检查嵌入 payload 的启动错误，或查看下方过程日志。"
+                        detail: "安装器没有拿到有效结果文件。请检查嵌入 payload 的启动错误，或查看下方过程日志。",
+                        logPath: ""
                     ))
                     self.render()
                 }
@@ -212,6 +208,10 @@ final class InstallerViewController: NSViewController {
         detailLabel.textColor = .secondaryLabelColor
         detailLabel.maximumNumberOfLines = 0
 
+        infoLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        infoLabel.textColor = .secondaryLabelColor
+        infoLabel.maximumNumberOfLines = 0
+
         locationTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         locationField.isEditable = false
         locationHintLabel.font = .systemFont(ofSize: 12, weight: .regular)
@@ -238,6 +238,11 @@ final class InstallerViewController: NSViewController {
         logScrollView.translatesAutoresizingMaskIntoConstraints = false
         logScrollView.heightAnchor.constraint(equalToConstant: 220).isActive = true
 
+        auxiliaryActionsStack.orientation = .horizontal
+        auxiliaryActionsStack.alignment = .leading
+        auxiliaryActionsStack.spacing = 12
+        auxiliaryActionsStack.translatesAutoresizingMaskIntoConstraints = false
+
         let buttonRow = NSStackView(views: [secondaryButton, primaryButton])
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 10
@@ -252,6 +257,8 @@ final class InstallerViewController: NSViewController {
             locationHintLabel,
             progressIndicator,
             detailLabel,
+            infoLabel,
+            auxiliaryActionsStack,
             logScrollView,
             buttonRow,
         ] {
@@ -275,6 +282,9 @@ final class InstallerViewController: NSViewController {
             titleLabel.stringValue = "正在检查当前安装状态"
             summaryLabel.stringValue = "安装器会先探测当前用户环境中的安装状态，再决定是首次安装还是修复 / 升级。"
             detailLabel.stringValue = ""
+            infoLabel.stringValue = ""
+            infoLabel.isHidden = true
+            configureAuxiliaryActions([])
             locationTitleLabel.isHidden = true
             locationField.isHidden = true
             browseButton.isHidden = true
@@ -291,6 +301,9 @@ final class InstallerViewController: NSViewController {
             titleLabel.stringValue = plan.title
             summaryLabel.stringValue = plan.summary
             detailLabel.stringValue = detailText(for: plan)
+            infoLabel.stringValue = ""
+            infoLabel.isHidden = true
+            configureAuxiliaryActions([])
             locationTitleLabel.isHidden = false
             locationField.isHidden = false
             browseButton.isHidden = !plan.installLocationEditable
@@ -311,6 +324,9 @@ final class InstallerViewController: NSViewController {
             titleLabel.stringValue = "正在安装"
             summaryLabel.stringValue = "安装器正在调用嵌入的 Codex Remote payload，并根据当前安装状态执行首装、升级或重装修复。"
             detailLabel.stringValue = "如果你正在修复已有安装，当前目录和服务状态会被自动复用。"
+            infoLabel.stringValue = ""
+            infoLabel.isHidden = true
+            configureAuxiliaryActions([])
             locationTitleLabel.isHidden = true
             locationField.isHidden = true
             browseButton.isHidden = true
@@ -321,34 +337,22 @@ final class InstallerViewController: NSViewController {
             primaryButton.title = "安装中..."
             secondaryButton.title = "安装中..."
             secondaryButton.isEnabled = false
-        case .success(let result):
-            stepLabel.stringValue = "Finished"
-            titleLabel.stringValue = "安装完成"
-            summaryLabel.stringValue = successSummary(for: result)
-            detailLabel.stringValue = successDetail(for: result)
+        case .result(let model):
+            stepLabel.stringValue = model.stepText
+            titleLabel.stringValue = model.title
+            summaryLabel.stringValue = model.summary
+            detailLabel.stringValue = model.detail
+            infoLabel.stringValue = resultInfoText(for: model)
+            infoLabel.isHidden = model.infoItems.isEmpty
+            configureAuxiliaryActions(model.auxiliaryActions)
             locationTitleLabel.isHidden = true
             locationField.isHidden = true
             browseButton.isHidden = true
             locationHintLabel.isHidden = true
             progressIndicator.stopAnimation(nil)
-            logScrollView.isHidden = false
+            logScrollView.isHidden = true
             primaryButton.isEnabled = true
-            primaryButton.title = successPrimaryAction(for: result)
-            secondaryButton.title = "关闭"
-            secondaryButton.isEnabled = true
-        case .failure(let failure):
-            stepLabel.stringValue = "Error"
-            titleLabel.stringValue = "安装失败"
-            summaryLabel.stringValue = failure.message
-            detailLabel.stringValue = failure.detail
-            locationTitleLabel.isHidden = true
-            locationField.isHidden = true
-            browseButton.isHidden = true
-            locationHintLabel.isHidden = true
-            progressIndicator.stopAnimation(nil)
-            logScrollView.isHidden = false
-            primaryButton.isEnabled = true
-            primaryButton.title = "重新检查"
+            primaryButton.title = model.primaryAction.title
             secondaryButton.title = "关闭"
             secondaryButton.isEnabled = true
         }
@@ -360,60 +364,85 @@ final class InstallerViewController: NSViewController {
             lines.append("当前已安装版本：\(currentVersion)")
         }
         lines.append("安装器版本：\(plan.installerVersion)")
-        if let serviceManager = plan.probe.serviceManager, !serviceManager.isEmpty {
-            lines.append("服务管理：\(serviceManager)")
+        let startupMode = installerFriendlyStartupModeLabel(plan.probe.startupMode, serviceManager: plan.probe.serviceManager)
+        if !startupMode.isEmpty {
+            let prefix = plan.probe.mode == "repair" ? "当前启动方式" : "安装后启动方式"
+            lines.append("\(prefix)：\(startupMode)")
         }
         return lines.joined(separator: "\n")
     }
 
-    private func successSummary(for result: PackagedInstallResultValue) -> String {
-        if result.setupRequired, !result.setupURL.isEmpty {
-            return "后台服务已经启动，WebSetup 会自动打开。若浏览器没有弹出，可以点击下方按钮重新打开。"
-        }
-        if !result.adminURL.isEmpty {
-            return "后台服务已经启动。你可以直接打开管理页继续使用。"
-        }
-        return "安装流程已经完成。"
+    private func resultInfoText(for model: InstallerResultPageModel) -> String {
+        model.infoItems.map { "\($0.label)：\($0.value)" }.joined(separator: "\n")
     }
 
-    private func successDetail(for result: PackagedInstallResultValue) -> String {
-        var lines: [String] = []
-        if !result.currentVersion.isEmpty {
-            lines.append("已安装版本：\(result.currentVersion)")
-        }
-        if !result.logPath.isEmpty {
-            lines.append("日志路径：\(result.logPath)")
-        }
-        if !result.adminURL.isEmpty {
-            lines.append("管理页：\(result.adminURL)")
-        }
-        if !result.setupURL.isEmpty {
-            lines.append("WebSetup：\(result.setupURL)")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private func successPrimaryAction(for result: PackagedInstallResultValue) -> String {
-        if result.setupRequired, !result.setupURL.isEmpty {
-            return "打开 WebSetup"
-        }
-        if !result.adminURL.isEmpty {
-            return "打开管理页"
-        }
-        return "完成"
-    }
-
-    private func failureState(from summary: InstallerExecutionSummary) -> InstallerFailureState {
-        var detailParts: [String] = [
-            "你可以查看下方日志后重试。若问题持续存在，优先关注 result-file 返回的错误和 daemon 日志路径。"
-        ]
-        if !summary.result.logPath.isEmpty {
-            detailParts.append("日志路径：\(summary.result.logPath)")
-        }
-        return InstallerFailureState(
+    private func failureResultModel(from summary: InstallerExecutionSummary) -> InstallerResultPageModel {
+        InstallerResultPageModel.fromFailure(
             message: summary.result.error.isEmpty ? "安装失败" : summary.result.error,
-            detail: detailParts.joined(separator: "\n")
+            detail: "你可以查看下方日志后重试。若问题持续存在，优先关注 result-file 返回的错误和 daemon 日志路径。",
+            logPath: summary.result.logPath
         )
+    }
+
+    private func performPrimaryResultAction(_ action: InstallerResultPageAction) {
+        performResultAction(action, terminateAfter: true)
+    }
+
+    @objc private func auxiliaryActionPressed(_ sender: NSButton) {
+        guard let action = auxiliaryActionsByTag[sender.tag] else {
+            return
+        }
+        performResultAction(action, terminateAfter: false)
+    }
+
+    private func performResultAction(_ action: InstallerResultPageAction, terminateAfter: Bool) {
+        switch action.kind {
+        case .continueWebSetup, .openAdminUI:
+            guard let target = action.target else {
+                if terminateAfter {
+                    NSApp.terminate(nil)
+                }
+                return
+            }
+            bridge.openURL(target)
+            if terminateAfter {
+                NSApp.terminate(nil)
+            }
+        case .openLogs:
+            guard let target = action.target else {
+                return
+            }
+            bridge.openFilePath(target)
+        case .finish:
+            if terminateAfter {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func configureAuxiliaryActions(_ actions: [InstallerResultPageAction]) {
+        auxiliaryActionsByTag.removeAll()
+        for view in auxiliaryActionsStack.arrangedSubviews {
+            auxiliaryActionsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        guard !actions.isEmpty else {
+            auxiliaryActionsStack.isHidden = true
+            return
+        }
+
+        auxiliaryActionsStack.isHidden = false
+        for (index, action) in actions.enumerated() {
+            let button = NSButton(title: action.title, target: self, action: #selector(auxiliaryActionPressed(_:)))
+            button.isBordered = false
+            button.contentTintColor = .linkColor
+            button.setButtonType(.momentaryPushIn)
+            button.alignment = .left
+            button.tag = index
+            auxiliaryActionsByTag[index] = action
+            auxiliaryActionsStack.addArrangedSubview(button)
+        }
     }
 
     private func appendLog(_ text: String) {

@@ -13,6 +13,7 @@ import (
 	"github.com/kxn/codex-remote-feishu/internal/core/agentproto"
 	"github.com/kxn/codex-remote-feishu/internal/core/control"
 	"github.com/kxn/codex-remote-feishu/internal/core/eventcontract"
+	"github.com/kxn/codex-remote-feishu/internal/core/orchestrator"
 	"github.com/kxn/codex-remote-feishu/internal/core/state"
 	relayruntime "github.com/kxn/codex-remote-feishu/internal/runtime"
 )
@@ -67,22 +68,15 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 	cfg := a.headlessRuntime
 	now := time.Now().UTC()
 	if strings.TrimSpace(cfg.BinaryPath) == "" {
-		if command.AutoRestore {
-			a.setSurfaceResumeBackoffLocked(command.SurfaceSessionID, "headless_restore_start_failed", now)
-		}
-		return a.service.HandleHeadlessLaunchFailed(
-			command.SurfaceSessionID,
-			command.InstanceID,
-			agentproto.ErrorInfo{
-				Code:             "headless_binary_missing",
-				Layer:            "daemon",
-				Stage:            "headless_start",
-				Operation:        "start_headless",
-				Message:          "headless 启动器未配置可执行文件。",
-				SurfaceSessionID: command.SurfaceSessionID,
-				ThreadID:         command.ThreadID,
-			},
-		)
+		return a.handleManagedHeadlessLaunchFailure(command, agentproto.ErrorInfo{
+			Code:             "headless_binary_missing",
+			Layer:            "daemon",
+			Stage:            "headless_start",
+			Operation:        "start_headless",
+			Message:          "headless 启动器未配置可执行文件。",
+			SurfaceSessionID: command.SurfaceSessionID,
+			ThreadID:         command.ThreadID,
+		}, now)
 	}
 
 	env := append([]string{}, cfg.BaseEnv...)
@@ -98,10 +92,7 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 			SurfaceSessionID: command.SurfaceSessionID,
 			ThreadID:         command.ThreadID,
 		}
-		if command.AutoRestore {
-			a.setSurfaceResumeBackoffLocked(command.SurfaceSessionID, "headless_restore_start_failed", now)
-		}
-		return a.service.HandleHeadlessLaunchFailed(command.SurfaceSessionID, command.InstanceID, errInfo)
+		return a.handleManagedHeadlessLaunchFailure(command, errInfo, now)
 	}
 	env = append(env,
 		"CODEX_REMOTE_INSTANCE_ID="+command.InstanceID,
@@ -122,10 +113,7 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 	launchArgs := append([]string{}, cfg.LaunchArgs...)
 	env, launchArgs, err := a.applyCodexHeadlessProviderConfig(env, launchArgs, backend, command.CodexProviderID)
 	if err != nil {
-		if command.AutoRestore {
-			a.setSurfaceResumeBackoffLocked(command.SurfaceSessionID, "headless_restore_start_failed", now)
-		}
-		return a.service.HandleHeadlessLaunchFailed(command.SurfaceSessionID, command.InstanceID, agentproto.ErrorInfoFromError(err, agentproto.ErrorInfo{
+		return a.handleManagedHeadlessLaunchFailure(command, agentproto.ErrorInfoFromError(err, agentproto.ErrorInfo{
 			Code:             "codex_provider_prepare_failed",
 			Layer:            "daemon",
 			Stage:            "headless_start",
@@ -134,14 +122,11 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 			SurfaceSessionID: command.SurfaceSessionID,
 			ThreadID:         command.ThreadID,
 			Retryable:        true,
-		}))
+		}), now)
 	}
 	env, claudeRuntimeSettings, err = a.applyClaudeHeadlessProfileEnv(env, backend, command.ClaudeProfileID)
 	if err != nil {
-		if command.AutoRestore {
-			a.setSurfaceResumeBackoffLocked(command.SurfaceSessionID, "headless_restore_start_failed", now)
-		}
-		return a.service.HandleHeadlessLaunchFailed(command.SurfaceSessionID, command.InstanceID, agentproto.ErrorInfoFromError(err, agentproto.ErrorInfo{
+		return a.handleManagedHeadlessLaunchFailure(command, agentproto.ErrorInfoFromError(err, agentproto.ErrorInfo{
 			Code:             "claude_profile_prepare_failed",
 			Layer:            "daemon",
 			Stage:            "headless_start",
@@ -150,7 +135,7 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 			SurfaceSessionID: command.SurfaceSessionID,
 			ThreadID:         command.ThreadID,
 			Retryable:        true,
-		}))
+		}), now)
 	}
 	if backend == agentproto.BackendClaude {
 		if effort := state.NormalizeClaudeReasoningEffort(command.ClaudeReasoningEffort); effort != "" {
@@ -163,10 +148,7 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 		if !claudeRuntimeSettings.Empty() {
 			raw, marshalErr := config.MarshalClaudeRuntimeSettings(claudeRuntimeSettings)
 			if marshalErr != nil {
-				if command.AutoRestore {
-					a.setSurfaceResumeBackoffLocked(command.SurfaceSessionID, "headless_restore_start_failed", now)
-				}
-				return a.service.HandleHeadlessLaunchFailed(command.SurfaceSessionID, command.InstanceID, agentproto.ErrorInfoFromError(marshalErr, agentproto.ErrorInfo{
+				return a.handleManagedHeadlessLaunchFailure(command, agentproto.ErrorInfoFromError(marshalErr, agentproto.ErrorInfo{
 					Code:             "claude_settings_prepare_failed",
 					Layer:            "daemon",
 					Stage:            "headless_start",
@@ -175,7 +157,7 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 					SurfaceSessionID: command.SurfaceSessionID,
 					ThreadID:         command.ThreadID,
 					Retryable:        true,
-				}))
+				}), now)
 			}
 			env = config.UpsertEnvValue(env, config.ClaudeRuntimeSettingsJSONEnv, raw)
 		}
@@ -208,15 +190,12 @@ func (a *App) startManagedHeadless(command control.DaemonCommand) []eventcontrac
 			firstNonEmpty(command.WorkspaceKey, command.ThreadCWD),
 			err,
 		)
-		if command.AutoRestore {
-			a.setSurfaceResumeBackoffLocked(command.SurfaceSessionID, "headless_restore_start_failed", now)
-		}
 		// When the launch fails because the workspace directory no longer
 		// exists, the OS reports an opaque "directory name is invalid" error.
 		// Replace it with an explanatory message so the Feishu client learns
 		// the real cause instead of a generic failure.
 		launchErr := explainMissingWorkspaceLaunchError(command, workDir, err)
-		return a.service.HandleHeadlessLaunchFailed(command.SurfaceSessionID, command.InstanceID, launchErr)
+		return a.handleManagedHeadlessLaunchFailure(command, launchErr, now)
 	}
 
 	a.managedHeadlessRuntime.Processes[command.InstanceID] = &headlessruntime.Process{
@@ -263,6 +242,19 @@ func explainMissingWorkspaceLaunchError(command control.DaemonCommand, workDir s
 		SurfaceSessionID: command.SurfaceSessionID,
 		ThreadID:         command.ThreadID,
 	}
+}
+
+func (a *App) handleManagedHeadlessLaunchFailure(command control.DaemonCommand, err error, now time.Time) []eventcontract.Event {
+	events := a.service.HandleHeadlessLaunchFailed(command.SurfaceSessionID, command.InstanceID, err)
+	if !command.AutoRestore {
+		return events
+	}
+	displayCode, emit := a.recordSurfaceResumeFailureLocked(
+		command.SurfaceSessionID,
+		orchestrator.HeadlessRestoreLaunchFailureCode(err),
+		now,
+	)
+	return rewriteHeadlessRestoreFailureEvents(events, displayCode, emit)
 }
 
 func headlessLaunchModeForBackend(backend agentproto.Backend) string {

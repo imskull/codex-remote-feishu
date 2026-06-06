@@ -13,6 +13,7 @@ struct InstallerProbeResult: Codable {
     let suggestedInstallBinDir: String?
     let installLocationEditable: Bool?
     let serviceManager: String?
+    let startupMode: String?
     let error: String?
 }
 
@@ -23,6 +24,7 @@ struct PackagedInstallResultValue {
     var configPath: String = ""
     var installedBinary: String = ""
     var serviceManager: String = ""
+    var startupMode: String = ""
     var currentVersion: String = ""
     var currentTrack: String = ""
     var currentSlot: String = ""
@@ -82,15 +84,9 @@ struct InstallerExecutionRequest {
     let installBinDir: String
 }
 
-struct InstallerFailureState {
-    let message: String
-    let detail: String
-}
-
 enum ScreenState {
     case loading
     case ready
     case installing
-    case success(PackagedInstallResultValue)
-    case failure(InstallerFailureState)
+    case result(InstallerResultPageModel)
 }

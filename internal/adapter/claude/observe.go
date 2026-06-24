@@ -109,6 +109,7 @@ func (t *Translator) observeMessageStart(event map[string]any) Result {
 		ParentToolUseID: strings.TrimSpace(lookupStringFromAny(event["parent_tool_use_id"])),
 		Blocks:          map[int]*blockState{},
 	}
+	t.ensurePendingTurnForUnsolicitedMessage()
 	events := t.startActiveTurnIfNeeded()
 	if t.activeTurn == nil {
 		return Result{}

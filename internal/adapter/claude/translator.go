@@ -260,6 +260,34 @@ func (t *Translator) ensureActiveTurn() *turnState {
 	return t.activeTurn
 }
 
+// ensurePendingTurnForUnsolicitedMessage synthesizes a turn when Claude begins a
+// live assistant message that no daemon command initiated — e.g. a completed
+// background task injects a <task-notification> and Claude responds on its own.
+// Without a pending/active turn every observed event is gated out, so the whole
+// spontaneous turn (including the final assistant message) is silently dropped
+// and nothing reaches the remote surface. The synthesized turn carries the
+// canonical session thread id so the orchestrator can route its output to
+// whichever surface currently owns that thread (turnSurface -> threadClaim).
+//
+// This only fires on the live stream_event message_start (the unambiguous start
+// of a streamed turn) and only when the session id is already known, so resume
+// replay and bootstrap frames cannot spuriously resurrect old turns.
+func (t *Translator) ensurePendingTurnForUnsolicitedMessage() {
+	if t.activeTurn != nil || len(t.pendingTurns) != 0 {
+		return
+	}
+	threadID := strings.TrimSpace(t.sessionID)
+	if threadID == "" {
+		return
+	}
+	t.pendingTurns = append(t.pendingTurns, &turnState{
+		CommandID: t.nextNativeID("unsolicited"),
+		Initiator: agentproto.Initiator{Kind: agentproto.InitiatorUnknown},
+		ThreadID:  threadID,
+		TurnID:    t.nextTurnID(),
+	})
+}
+
 func (t *Translator) startActiveTurnIfNeeded() []agentproto.Event {
 	turn := t.ensureActiveTurn()
 	if turn == nil || turn.Started {

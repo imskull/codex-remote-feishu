@@ -7,6 +7,7 @@ dist/
 coverage.out
 *.test
 *.exe
+*.exe~
 *.out
 .DS_Store
 .tools/

@@ -13,6 +13,10 @@ coverage.out
 web/node_modules/
 web/.vite/
 .vscode/
+.mcp.json
+# Stray local admin-UI rebuild bundle (a different content hash than the
+# committed dist/assets/index-*.js); ignore so safe-push stays clean.
+internal/app/daemon/adminui/dist/assets/index-Civ904mJ.js
 .codex/state/*
 !.codex/state/issue-doc-sync/
 !.codex/state/issue-doc-sync/**

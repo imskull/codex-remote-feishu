@@ -38,6 +38,10 @@ func RunMain(ctx context.Context, version, branch string) error {
 }
 
 func RunMainWithArgs(ctx context.Context, args []string, version, branch string) error {
+	// When launched by the Windows Task Scheduler logon task, the daemon owns a
+	// fresh console window; hide it so the background daemon is headless. Run
+	// foreground from a terminal leaves the shared console untouched.
+	hideOwnConsoleWindow()
 	if err := applyDaemonStartupArgs(args); err != nil {
 		return err
 	}

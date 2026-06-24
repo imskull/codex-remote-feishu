@@ -2,15 +2,31 @@ package install
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/xml"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/kxn/codex-remote-feishu/internal/execlaunch"
 )
+
+// encodeUTF16LEWithBOM renders s as UTF-16 little-endian with a leading BOM.
+// schtasks.exe /XML rejects UTF-8 task definitions on localized (e.g. zh-CN)
+// Windows with "无法切换编码" / "cannot switch character encoding"; it requires
+// the XML file to be UTF-16. The declaration must say encoding="UTF-16" to match.
+func encodeUTF16LEWithBOM(s string) []byte {
+	codes := utf16.Encode([]rune(s))
+	buf := make([]byte, 0, 2+len(codes)*2)
+	buf = append(buf, 0xFF, 0xFE) // UTF-16 LE BOM
+	for _, c := range codes {
+		buf = binary.LittleEndian.AppendUint16(buf, c)
+	}
+	return buf
+}
 
 var taskSchedulerRunner = runTaskScheduler
 
@@ -72,7 +88,7 @@ func renderTaskSchedulerLogonXML(state InstallState) (string, error) {
 	workingDirectory := normalizeServicePathValue(state.BaseDir)
 
 	lines := []string{
-		`<?xml version="1.0" encoding="UTF-8"?>`,
+		`<?xml version="1.0" encoding="UTF-16"?>`,
 		`<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">`,
 		`  <RegistrationInfo>`,
 		`    <URI>` + xmlEscape(taskName) + `</URI>`,
@@ -186,7 +202,7 @@ func installTaskSchedulerLogonTask(ctx context.Context, state InstallState) (Ins
 	if err := serviceMkdirAll(filepath.Dir(state.ServiceUnitPath), 0o755); err != nil {
 		return InstallState{}, err
 	}
-	if err := serviceWriteFile(state.ServiceUnitPath, []byte(xmlContent), 0o644); err != nil {
+	if err := serviceWriteFile(state.ServiceUnitPath, encodeUTF16LEWithBOM(xmlContent), 0o644); err != nil {
 		return InstallState{}, err
 	}
 	_, err = taskSchedulerRunner(ctx, "/Create", "/TN", taskSchedulerTaskNameForInstance(state.InstanceID), "/XML", state.ServiceUnitPath, "/F")

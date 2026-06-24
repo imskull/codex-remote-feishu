@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func withWindowsGOOS(t *testing.T) {
@@ -123,6 +124,37 @@ func TestInstallTaskSchedulerLogonRegistersXMLTask(t *testing.T) {
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("task scheduler calls = %#v, want %#v", calls, wantCalls)
 	}
+
+	// schtasks /XML rejects UTF-8 task definitions on localized Windows
+	// ("无法切换编码"); the file must be UTF-16 LE with a BOM and the XML
+	// declaration must say encoding="UTF-16".
+	raw, err := os.ReadFile(updated.ServiceUnitPath)
+	if err != nil {
+		t.Fatalf("ReadFile task XML: %v", err)
+	}
+	if len(raw) < 2 || raw[0] != 0xFF || raw[1] != 0xFE {
+		t.Fatalf("task XML must start with UTF-16 LE BOM, got % x", raw[:min(2, len(raw))])
+	}
+	decoded := utf16.Decode(bytesToUint16LE(raw[2:]))
+	if !strings.Contains(string(decoded), `encoding="UTF-16"`) {
+		t.Fatalf("task XML declaration must be UTF-16:\n%s", string(decoded))
+	}
+}
+
+func TestEncodeUTF16LEWithBOM(t *testing.T) {
+	got := encodeUTF16LEWithBOM("AB")
+	want := []byte{0xFF, 0xFE, 'A', 0x00, 'B', 0x00}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("encodeUTF16LEWithBOM = % x, want % x", got, want)
+	}
+}
+
+func bytesToUint16LE(b []byte) []uint16 {
+	out := make([]uint16, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		out = append(out, uint16(b[i])|uint16(b[i+1])<<8)
+	}
+	return out
 }
 
 func TestTaskSchedulerLifecycleCommands(t *testing.T) {

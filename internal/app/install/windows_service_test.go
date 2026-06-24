@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 )
 
@@ -138,6 +139,118 @@ func TestInstallTaskSchedulerLogonRegistersXMLTask(t *testing.T) {
 	decoded := utf16.Decode(bytesToUint16LE(raw[2:]))
 	if !strings.Contains(string(decoded), `encoding="UTF-16"`) {
 		t.Fatalf("task XML declaration must be UTF-16:\n%s", string(decoded))
+	}
+}
+
+func TestTaskSchedulerLogonStopReapsDaemonProcessTree(t *testing.T) {
+	withWindowsGOOS(t)
+	baseDir := filepath.Join(t.TempDir(), "Codex Remote")
+	state := InstallState{
+		InstanceID:      "stable",
+		BaseDir:         baseDir,
+		StatePath:       defaultInstallStatePathForInstance(baseDir, "stable"),
+		ConfigPath:      defaultConfigPathForInstance(baseDir, "stable"),
+		InstalledBinary: seedBinary(t, filepath.Join(baseDir, "bin", "codex-remote.exe"), "binary"),
+		ServiceManager:  ServiceManagerTaskSchedulerLogon,
+	}
+	ApplyStateMetadata(&state, StateMetadataOptions{
+		InstanceID:     state.InstanceID,
+		StatePath:      state.StatePath,
+		BaseDir:        state.BaseDir,
+		ServiceManager: state.ServiceManager,
+	})
+
+	const daemonPID = 4242
+	wantPIDFile := RuntimePathsForState(state).PIDFile
+
+	origRead, origTerm, origRemove := readDaemonPID, terminateDaemonTree, removeRuntimeStateFile
+	t.Cleanup(func() {
+		readDaemonPID, terminateDaemonTree, removeRuntimeStateFile = origRead, origTerm, origRemove
+	})
+
+	var gotReadPath string
+	readDaemonPID = func(path string) (int, error) {
+		gotReadPath = path
+		return daemonPID, nil
+	}
+	var terminatedPID int
+	terminateDaemonTree = func(pid int, _ time.Duration) error {
+		terminatedPID = pid
+		return nil
+	}
+	var removed []string
+	removeRuntimeStateFile = func(path string) error {
+		removed = append(removed, path)
+		return nil
+	}
+
+	var calls []string
+	withMockTaskScheduler(t, func(_ context.Context, args ...string) (string, error) {
+		// The tree must already be reaped before the task is ended.
+		if terminatedPID != daemonPID {
+			t.Fatalf("daemon tree not reaped before /End: terminatedPID=%d", terminatedPID)
+		}
+		calls = append(calls, strings.Join(args, " "))
+		return "", nil
+	})
+
+	if err := taskSchedulerLogonStop(context.Background(), state); err != nil {
+		t.Fatalf("taskSchedulerLogonStop: %v", err)
+	}
+	if gotReadPath != wantPIDFile {
+		t.Fatalf("read PID from %q, want %q", gotReadPath, wantPIDFile)
+	}
+	if terminatedPID != daemonPID {
+		t.Fatalf("terminated pid = %d, want %d", terminatedPID, daemonPID)
+	}
+	wantCalls := []string{"/End /TN " + taskSchedulerTaskNameForInstance("stable")}
+	if !reflect.DeepEqual(calls, wantCalls) {
+		t.Fatalf("task scheduler calls = %#v, want %#v", calls, wantCalls)
+	}
+	if len(removed) != 2 {
+		t.Fatalf("expected pid+identity files removed, got %#v", removed)
+	}
+}
+
+func TestTaskSchedulerLogonStopSkipsReapWhenNoPIDFile(t *testing.T) {
+	withWindowsGOOS(t)
+	baseDir := filepath.Join(t.TempDir(), "Codex Remote")
+	state := InstallState{
+		InstanceID:      "stable",
+		BaseDir:         baseDir,
+		StatePath:       defaultInstallStatePathForInstance(baseDir, "stable"),
+		ConfigPath:      defaultConfigPathForInstance(baseDir, "stable"),
+		InstalledBinary: seedBinary(t, filepath.Join(baseDir, "bin", "codex-remote.exe"), "binary"),
+		ServiceManager:  ServiceManagerTaskSchedulerLogon,
+	}
+	ApplyStateMetadata(&state, StateMetadataOptions{
+		InstanceID:     state.InstanceID,
+		StatePath:      state.StatePath,
+		BaseDir:        state.BaseDir,
+		ServiceManager: state.ServiceManager,
+	})
+
+	origRead, origTerm := readDaemonPID, terminateDaemonTree
+	t.Cleanup(func() { readDaemonPID, terminateDaemonTree = origRead, origTerm })
+	readDaemonPID = func(string) (int, error) { return 0, os.ErrNotExist }
+	terminated := false
+	terminateDaemonTree = func(int, time.Duration) error { terminated = true; return nil }
+
+	var calls []string
+	withMockTaskScheduler(t, func(_ context.Context, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "", nil
+	})
+
+	if err := taskSchedulerLogonStop(context.Background(), state); err != nil {
+		t.Fatalf("taskSchedulerLogonStop: %v", err)
+	}
+	if terminated {
+		t.Fatal("terminateDaemonTree should not run when PID file is absent")
+	}
+	wantCalls := []string{"/End /TN " + taskSchedulerTaskNameForInstance("stable")}
+	if !reflect.DeepEqual(calls, wantCalls) {
+		t.Fatalf("task scheduler calls = %#v, want %#v", calls, wantCalls)
 	}
 }
 

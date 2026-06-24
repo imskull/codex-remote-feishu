@@ -12,6 +12,19 @@ import (
 	"unicode/utf16"
 
 	"github.com/kxn/codex-remote-feishu/internal/execlaunch"
+	relayruntime "github.com/kxn/codex-remote-feishu/internal/runtime"
+)
+
+// taskSchedulerStopGrace bounds how long the daemon process tree is given to
+// exit when the managed service is stopped.
+const taskSchedulerStopGrace = 5 * time.Second
+
+// Indirection points so tests can observe the daemon-tree reap without touching
+// real processes.
+var (
+	readDaemonPID          = relayruntime.ReadPID
+	terminateDaemonTree    = relayruntime.TerminateProcess
+	removeRuntimeStateFile = serviceRemoveFile
 )
 
 // encodeUTF16LEWithBOM renders s as UTF-16 little-endian with a leading BOM.
@@ -256,11 +269,33 @@ func taskSchedulerLogonStop(ctx context.Context, state InstallState) error {
 	if err != nil {
 		return err
 	}
+	// `schtasks /End` only terminates the daemon process the task launched; the
+	// daemon's headless backends are detached children that survive it. Reap the
+	// whole process tree first (while parent links are still intact) so stopping
+	// the service leaves nothing orphaned — mirroring the detached stop path,
+	// which already uses relayruntime.TerminateProcess.
+	reapDaemonProcessTree(state)
 	_, err = taskSchedulerRunner(ctx, "/End", "/TN", taskSchedulerTaskNameForInstance(state.InstanceID))
 	if isTaskSchedulerNotRunningErr(err) {
 		return nil
 	}
 	return err
+}
+
+// reapDaemonProcessTree terminates the daemon process tree for this instance,
+// reading the PID the daemon recorded on startup. Best-effort: any failure is
+// left to the subsequent `schtasks /End`.
+func reapDaemonProcessTree(state InstallState) {
+	paths := RuntimePathsForState(state)
+	pid, err := readDaemonPID(paths.PIDFile)
+	if err != nil || pid <= 0 {
+		return
+	}
+	if err := terminateDaemonTree(pid, taskSchedulerStopGrace); err != nil {
+		return
+	}
+	_ = removeRuntimeStateFile(paths.PIDFile)
+	_ = removeRuntimeStateFile(paths.IdentityFile)
 }
 
 func taskSchedulerLogonStopAndWait(ctx context.Context, state InstallState, timeout, poll time.Duration) error {

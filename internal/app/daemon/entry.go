@@ -39,9 +39,9 @@ func RunMain(ctx context.Context, version, branch string) error {
 
 func RunMainWithArgs(ctx context.Context, args []string, version, branch string) error {
 	// When launched by the Windows Task Scheduler logon task, the daemon owns a
-	// fresh console window; hide it so the background daemon is headless. Run
+	// fresh console; detach it so the background daemon is headless. Run
 	// foreground from a terminal leaves the shared console untouched.
-	hideOwnConsoleWindow()
+	consoleDetached := hideOwnConsoleWindow()
 	if err := applyDaemonStartupArgs(args); err != nil {
 		return err
 	}
@@ -71,7 +71,14 @@ func RunMainWithArgs(ctx context.Context, args []string, version, branch string)
 		return fmt.Errorf("open daemon log file: %w", err)
 	}
 	defer logFile.Close()
-	log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+	// After FreeConsole (consoleDetached), os.Stderr is an invalid handle and
+	// writing to it errors; an io.MultiWriter would then abort before reaching
+	// logFile and drop the log line. Log to the file only in that case.
+	if consoleDetached {
+		log.SetOutput(logFile)
+	} else {
+		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+	}
 
 	controller := feishu.NewMultiGatewayController()
 	for _, app := range runtimeGatewayApps(loadedConfig.Config, cfg, paths) {

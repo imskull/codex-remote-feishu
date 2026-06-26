@@ -1,8 +1,8 @@
 # Feishu 卡片 UI 状态机
 
 > Type: `general`
-> Updated: `2026-06-03`
-> Summary: 当前 live 的 Feishu 卡片 UI 已把 workspace/page/request/review 等 owner-flow 收口到稳定的 page / picker / request substrate；immediate `select_static` callback 的取值规则统一落在 `internal/adapter/feishu/selectflow`，按 `payload value -> form_value[field_name] -> option/options` 恢复，避免群聊回调把旧 option 误当成新选择；`/workspace list` 与 alias `/list` 在工作区已确定后也会把 `新建会话` 作为合法 session 选项，并默认选中它；显式表单提交家族仍保持各自既有 submit 语义。
+> Updated: `2026-06-26`
+> Summary: 当前 live 的 Feishu 卡片 UI 已把 workspace/page/request/review 等 owner-flow 收口到稳定的 page / picker / request substrate；immediate `select_static` callback 的取值规则统一落在 `internal/adapter/feishu/selectflow`，按 `payload value -> form_value[field_name] -> option/options` 恢复，避免群聊回调把旧 option 误当成新选择；card callback 同步 replace 现在受 2.5 秒本地等待上限保护，超时后先 ack 再异步 patch/reply；`/workspace list` 与 alias `/list` 在工作区已确定后也会把 `新建会话` 作为合法 session 选项，并默认选中它；显式表单提交家族仍保持各自既有 submit 语义。
 
 ## 1. 文档定位
 
@@ -424,7 +424,7 @@ MCP request 卡片当前新增的可视语义：
 
 ### 5.1 同步 replace 的必要条件
 
-当前 `gateway` 会在命中以下任一路径时，同步等待 handler 结果并返回 callback replace：
+当前 `gateway` 会在命中以下任一路径时，同步等待 handler 结果并返回 callback replace。等待上限是 `2.5 秒`，低于 Feishu 卡片 callback 固定 `3 秒` 响应窗口；若 handler 尚未返回，gateway 会先返回空 callback ack，让 handler 继续在后台完成。后台完成后如果仍产出 `ReplaceCurrentCard`，gateway 会优先把该卡转成对原 `message_id` 的 `message.patch`，并把新卡标成 `update_multi=true`；若原卡不能 patch，则降级为回复原卡的一张新卡。
 
 1. frontstage contract 同步门槛
   - callback payload 带有非空 `daemon_lifecycle_id`
@@ -856,7 +856,7 @@ MCP request 卡片当前新增的可视语义：
 - [internal/adapter/feishu/gateway_target_picker_test.go](../../internal/adapter/feishu/gateway_target_picker_test.go)
   - 锁定 `target_picker_*` 与 `target_picker_page` callback payload 能正确回到 `control.Action`
 - [internal/adapter/feishu/gateway_test.go](../../internal/adapter/feishu/gateway_test.go)
-  - 锁定 callback payload 解析、同步等待 replace 的触发条件（inline navigation + stamped command result replacement + dormant command submission anchor compatibility branch）、无 lifecycle 导航仍异步 ack、card/text attention annotation 的 reply/fallback 出站路径，以及共享更新卡的 `message.patch` 出站路径
+  - 锁定 callback payload 解析、同步等待 replace 的触发条件（inline navigation + stamped command result replacement + dormant command submission anchor compatibility branch）、同步等待超时后的空 ack + late `message.patch`/reply fallback、无 lifecycle 导航仍异步 ack、card/text attention annotation 的 reply/fallback 出站路径，以及共享更新卡的 `message.patch` 出站路径
 - [internal/app/daemon/app_review_mode_test.go](../../internal/app/daemon/app_review_mode_test.go)
   - 锁定菜单 `review` 与 bare `/review` 都先进入同一张 `审阅代码变更` root page，并在 root page 内显式分流 `Review 待提交内容` / `Review 指定提交`；同时锁定普通 final card 上的 `Review 待提交内容` 与 `评审 <short-sha>` footer 继续 append-only、不覆盖源 final card，以及 review session final card 的 `放弃审阅` / `按审阅意见继续修改` 路径
 - [internal/app/daemon/app_turn_patch_test.go](../../internal/app/daemon/app_turn_patch_test.go)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkcallback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
@@ -17,8 +18,20 @@ import (
 )
 
 const (
-	oversizedCardMessage = "内容太多了，后面的内容已省略。"
+	oversizedCardMessage                  = "内容太多了，后面的内容已省略。"
+	cardActionSynchronousResponseTimeout  = 2500 * time.Millisecond
+	cardActionLateReplacementApplyTimeout = 10 * time.Second
 )
+
+type cardActionTriggerOptions struct {
+	syncTimeout time.Duration
+	lateResult  func(context.Context, control.Action, *ActionResult) error
+}
+
+type cardActionHandlerOutcome struct {
+	result *ActionResult
+	err    error
+}
 
 func (g *LiveGateway) Start(ctx context.Context, handler ActionHandler) error {
 	inboundLane := gatewaypkg.NewSurfaceInboundLane(ctx, g.inboundEnv(), gatewayDispatcher(handler))
@@ -35,7 +48,7 @@ func (g *LiveGateway) Start(ctx context.Context, handler ActionHandler) error {
 	dispatch.OnP2CardActionTrigger(func(ctx context.Context, event *larkcallback.CardActionTriggerEvent) (*larkcallback.CardActionTriggerResponse, error) {
 		action, ok := gatewaypkg.ParseCardActionTriggerEvent(g.routingEnv(), event)
 		if ok {
-			return handleCardActionTrigger(ctx, action, handler)
+			return g.handleCardActionTrigger(ctx, action, handler)
 		}
 		return &larkcallback.CardActionTriggerResponse{}, nil
 	})
@@ -59,16 +72,71 @@ func handleGatewayEventAction(ctx context.Context, action control.Action, handle
 }
 
 func handleCardActionTrigger(ctx context.Context, action control.Action, handler ActionHandler) (*larkcallback.CardActionTriggerResponse, error) {
+	return handleCardActionTriggerWithOptions(ctx, action, handler, cardActionTriggerOptions{
+		syncTimeout: cardActionSynchronousResponseTimeout,
+	})
+}
+
+func (g *LiveGateway) handleCardActionTrigger(ctx context.Context, action control.Action, handler ActionHandler) (*larkcallback.CardActionTriggerResponse, error) {
+	return handleCardActionTriggerWithOptions(ctx, action, handler, cardActionTriggerOptions{
+		syncTimeout: cardActionSynchronousResponseTimeout,
+		lateResult:  g.applyLateCardActionReplacement,
+	})
+}
+
+func handleCardActionTriggerWithOptions(ctx context.Context, action control.Action, handler ActionHandler, options cardActionTriggerOptions) (*larkcallback.CardActionTriggerResponse, error) {
 	if shouldAcknowledgeCardActionImmediately(action) {
 		go handler(context.Background(), action)
 		return &larkcallback.CardActionTriggerResponse{}, nil
 	}
-	if result := handler(ctx, action); result != nil {
-		if response := callbackCardResponse(result); response != nil {
+	timeout := options.syncTimeout
+	if timeout <= 0 {
+		timeout = cardActionSynchronousResponseTimeout
+	}
+	done := make(chan cardActionHandlerOutcome, 1)
+	go runCardActionHandler(context.Background(), action, handler, done)
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case outcome := <-done:
+		if outcome.err != nil {
+			return nil, outcome.err
+		}
+		if response := callbackCardResponse(outcome.result); response != nil {
 			return response, nil
+		}
+	case <-timer.C:
+		if options.lateResult != nil {
+			go completeLateCardActionResult(done, action, options.lateResult)
 		}
 	}
 	return &larkcallback.CardActionTriggerResponse{}, nil
+}
+
+func runCardActionHandler(ctx context.Context, action control.Action, handler ActionHandler, done chan<- cardActionHandlerOutcome) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			done <- cardActionHandlerOutcome{err: fmt.Errorf("card action handler panic: %v", recovered)}
+		}
+	}()
+	done <- cardActionHandlerOutcome{result: handler(ctx, action)}
+}
+
+func completeLateCardActionResult(done <-chan cardActionHandlerOutcome, action control.Action, lateResult func(context.Context, control.Action, *ActionResult) error) {
+	outcome := <-done
+	if outcome.err != nil {
+		log.Printf("feishu card action late replacement skipped: action=%s message=%s err=%v", action.Kind, cardActionMessageID(action), outcome.err)
+		return
+	}
+	if outcome.result == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cardActionLateReplacementApplyTimeout)
+	defer cancel()
+	if err := lateResult(ctx, action, outcome.result); err != nil {
+		log.Printf("feishu card action late replacement failed: action=%s message=%s err=%v", action.Kind, cardActionMessageID(action), err)
+	}
 }
 
 func shouldAcknowledgeGatewayActionImmediately(action control.Action) bool {
@@ -109,6 +177,73 @@ func callbackCardResponse(result *ActionResult) *larkcallback.CardActionTriggerR
 			Data: trimCardPayloadForInlineCallback(renderOperationCard(*card, cardEnvelopeV2)),
 		},
 	}
+}
+
+func (g *LiveGateway) applyLateCardActionReplacement(ctx context.Context, action control.Action, result *ActionResult) error {
+	operation, ok := lateCardActionReplacementOperation(action, result)
+	if !ok {
+		return nil
+	}
+	err := g.Apply(ctx, []Operation{operation})
+	if err == nil {
+		return nil
+	}
+	fallback, ok := lateCardActionReplacementFallback(action, operation)
+	if !ok {
+		return err
+	}
+	log.Printf(
+		"feishu late card patch fallback: action=%s surface=%s message=%s err=%v",
+		action.Kind,
+		strings.TrimSpace(action.SurfaceSessionID),
+		cardActionMessageID(action),
+		err,
+	)
+	fallbackCtx, cancel := context.WithTimeout(context.Background(), cardActionLateReplacementApplyTimeout)
+	defer cancel()
+	if fallbackErr := g.Apply(fallbackCtx, []Operation{fallback}); fallbackErr != nil {
+		return fmt.Errorf("patch failed: %v; fallback send failed: %w", err, fallbackErr)
+	}
+	return nil
+}
+
+func lateCardActionReplacementOperation(action control.Action, result *ActionResult) (Operation, bool) {
+	if result == nil || result.ReplaceCurrentCard == nil || result.ReplaceCurrentCard.Kind != OperationSendCard {
+		return Operation{}, false
+	}
+	operation := *result.ReplaceCurrentCard
+	operation.GatewayID = firstNonEmpty(strings.TrimSpace(operation.GatewayID), strings.TrimSpace(action.GatewayID))
+	operation.SurfaceSessionID = firstNonEmpty(strings.TrimSpace(operation.SurfaceSessionID), strings.TrimSpace(action.SurfaceSessionID))
+	operation.ChatID = firstNonEmpty(strings.TrimSpace(operation.ChatID), strings.TrimSpace(action.ChatID))
+	operation.CardUpdateMulti = true
+	operation.ReplyToMessageID = ""
+	if messageID := cardActionMessageID(action); messageID != "" {
+		operation.Kind = OperationUpdateCard
+		operation.MessageID = messageID
+	}
+	return operation, true
+}
+
+func lateCardActionReplacementFallback(action control.Action, operation Operation) (Operation, bool) {
+	if operation.Kind != OperationUpdateCard {
+		return Operation{}, false
+	}
+	fallback := operation
+	fallback.Kind = OperationSendCard
+	fallback.MessageID = ""
+	fallback.ReplyToMessageID = cardActionMessageID(action)
+	fallback.CardUpdateMulti = true
+	return fallback, fallback.ChatID != "" || fallback.ReceiveID != ""
+}
+
+func cardActionMessageID(action control.Action) string {
+	if messageID := strings.TrimSpace(action.MessageID); messageID != "" {
+		return messageID
+	}
+	if action.Inbound == nil {
+		return ""
+	}
+	return strings.TrimSpace(action.Inbound.OpenMessageID)
 }
 
 func (g *LiveGateway) SetStateHook(hook func(GatewayState, error)) {

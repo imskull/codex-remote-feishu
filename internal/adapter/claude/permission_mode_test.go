@@ -67,6 +67,7 @@ func TestClaudePermissionSelectionFromNative(t *testing.T) {
 		{name: "accept edits", nativeMode: "acceptEdits", accessMode: agentproto.AccessModeAcceptEdits, planMode: "off"},
 		{name: "bypass", nativeMode: "bypassPermissions", accessMode: agentproto.AccessModeFullAccess, planMode: "off"},
 		{name: "plan", nativeMode: "plan", accessMode: "", planMode: "on"},
+		{name: "missing mode stays unknown", nativeMode: "", accessMode: "", planMode: ""},
 		{name: "unmapped mode does not fake confirm", nativeMode: "dontAsk", accessMode: "", planMode: ""},
 	}
 	for _, tc := range cases {

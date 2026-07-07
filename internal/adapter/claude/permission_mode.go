@@ -52,6 +52,9 @@ func claudePermissionSelectionFromOverrides(accessMode, planMode string) claudeP
 
 func claudePermissionSelectionFromNative(mode string) claudePermissionSelection {
 	observed := claudesessionstore.CompileObservedPermissionStateFromClaudeNative(mode)
+	if observed == nil {
+		return claudePermissionSelection{}
+	}
 	return claudePermissionSelection{
 		NativeMode: firstNonEmptyString(observed.NativeMode, claudePermissionModeDefault),
 		AccessMode: agentproto.NormalizeAccessMode(observed.ProjectedAccessMode),

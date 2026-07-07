@@ -167,6 +167,25 @@ func TestObserveClaudeSystemPermissionModeEmitsObservedConfig(t *testing.T) {
 	}
 }
 
+func TestObserveClaudeSystemMissingPermissionModeKeepsAccessUnknown(t *testing.T) {
+	tr := NewTranslator("inst-1")
+
+	initResult := observeClaude(t, tr, map[string]any{
+		"type":       "system",
+		"subtype":    "init",
+		"session_id": "session-claude-1",
+		"cwd":        "/data/dl/droid",
+		"model":      "mimo-v2.5-pro",
+	})
+	if len(initResult.Events) != 1 {
+		t.Fatalf("expected one config.observed event on init, got %#v", initResult.Events)
+	}
+	event := initResult.Events[0]
+	if event.Kind != agentproto.EventConfigObserved || event.ThreadID != "session-claude-1" || event.AccessMode != "" || event.PlanMode != "" || event.ObservedPermission != nil {
+		t.Fatalf("expected missing permission mode to stay unknown, got %#v", event)
+	}
+}
+
 func TestClaudePermissionControlResponseRefreshesObservedConfig(t *testing.T) {
 	tr := NewTranslator("inst-1")
 	observeClaude(t, tr, map[string]any{

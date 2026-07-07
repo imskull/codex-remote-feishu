@@ -117,6 +117,29 @@ func TestListSessionThreadsLeavesUnmappedPermissionModeWithoutFakeProjection(t *
 	}
 }
 
+func TestListSessionThreadsMissingPermissionModeStaysUnknown(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", configDir)
+
+	workspaceRoot := filepath.Join(t.TempDir(), "ws-missing-mode")
+	writeClaudeSessionFile(t, configDir, workspaceRoot, "session-missing-mode", time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC), []map[string]any{
+		{"type": "system", "cwd": workspaceRoot, "session_id": "session-missing-mode", "model": "mimo-v2.5-pro"},
+		{"type": "session-title", "title": "Missing mode session"},
+		{"type": "user", "message": map[string]any{"role": "user", "content": "Workspace missing mode prompt"}},
+	})
+
+	threads, err := listSessionThreads(workspaceRoot, false, RuntimeStateSnapshot{})
+	if err != nil {
+		t.Fatalf("listSessionThreads: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %#v", threads)
+	}
+	if threads[0].AccessMode != "" || threads[0].PlanMode != "" || threads[0].ObservedPermission != nil {
+		t.Fatalf("expected missing permission mode to remain unknown, got %#v", threads[0])
+	}
+}
+
 func writeClaudeSessionFile(t *testing.T, configDir, workspaceRoot, sessionID string, modTime time.Time, entries []map[string]any) string {
 	t.Helper()
 	projectDir := filepath.Join(configDir, "projects", SanitizeProjectDirName(workspaceRoot))

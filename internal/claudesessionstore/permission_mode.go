@@ -22,7 +22,10 @@ type claudePermissionSelection struct {
 }
 
 func CompileObservedPermissionStateFromClaudeNative(mode string) *agentproto.ObservedPermissionState {
-	nativeMode := firstNonEmptyString(strings.TrimSpace(mode), claudePermissionModeDefault)
+	nativeMode := strings.TrimSpace(mode)
+	if nativeMode == "" {
+		return nil
+	}
 	switch nativeMode {
 	case claudePermissionModeDefault:
 		return &agentproto.ObservedPermissionState{

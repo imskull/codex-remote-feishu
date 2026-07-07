@@ -522,6 +522,22 @@ func TestFeishuCommandRegistryActionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseFeishuTextActionTreatsClearAsNewThreadAlias(t *testing.T) {
+	action, ok := ParseFeishuTextActionWithoutCatalog("/clear")
+	if !ok {
+		t.Fatal("expected /clear to be parsed")
+	}
+	if action.Kind != ActionNewThread {
+		t.Fatalf("action kind = %q, want %q", action.Kind, ActionNewThread)
+	}
+	if action.Text != "/clear" {
+		t.Fatalf("action text = %q, want %q", action.Text, "/clear")
+	}
+	if action.CommandID != FeishuCommandNew {
+		t.Fatalf("command id = %q, want %q", action.CommandID, FeishuCommandNew)
+	}
+}
+
 func TestEveryFeishuCommandHasSinglePrimaryActionKind(t *testing.T) {
 	for _, spec := range feishuCommandSpecs {
 		kind, ok := feishuCommandPrimaryActionKind(spec)

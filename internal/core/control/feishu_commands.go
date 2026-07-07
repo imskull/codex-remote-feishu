@@ -187,6 +187,7 @@ var feishuCommandSpecs = []feishuCommandSpec{
 		},
 		textExact: []feishuCommandMatch{
 			{alias: "/new", action: Action{Kind: ActionNewThread}},
+			{alias: "/clear", action: Action{Kind: ActionNewThread}},
 		},
 		menuExact: []feishuCommandMatch{
 			{alias: "new", action: Action{Kind: ActionNewThread}},

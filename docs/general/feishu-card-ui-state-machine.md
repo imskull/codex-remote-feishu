@@ -1,7 +1,7 @@
 # Feishu 卡片 UI 状态机
 
 > Type: `general`
-> Updated: `2026-06-26`
+> Updated: `2026-07-07`
 > Summary: 当前 live 的 Feishu 卡片 UI 已把 workspace/page/request/review 等 owner-flow 收口到稳定的 page / picker / request substrate；immediate `select_static` callback 的取值规则统一落在 `internal/adapter/feishu/selectflow`，按 `payload value -> form_value[field_name] -> option/options` 恢复，避免群聊回调把旧 option 误当成新选择；card callback 同步 replace 现在受 2.5 秒本地等待上限保护，超时后先 ack 再异步 patch/reply；`/workspace list` 与 alias `/list` 在工作区已确定后也会把 `新建会话` 作为合法 session 选项，并默认选中它；显式表单提交家族仍保持各自既有 submit 语义。
 
 ## 1. 文档定位
@@ -134,7 +134,7 @@
 | `request approve` / `approval_command` / `approval_file_change` / `approval_network` / `approval_can_use_tool` / `request_user_input` / `tool_callback` / `permissions_request_approval` / `mcp_server_elicitation` / `captureFeedback` / `revise` | `mixed` | 卡片按钮、表单字段、`request_control` payload、lifecycle stamp 属于 Feishu UI；request gate、反馈 capture、request family 统一的 `editing -> waiting_dispatch -> resolved/restore` 生命周期，以及由 orchestrator 单点 request presentation owner 基于 `requestType/rawType/metadata` 归一化出的 `SemanticKind + Title/Sections/Options/Questions/HintText` contract，属于产品状态机。`tool_callback` 当前也走同一 owner，但落成只读 fail-closed auto-dispatch；projector 当前只消费 `FeishuRequestView`，不再自己回猜 approval / permissions / MCP subtype |
 | `attach_instance` / `attach_workspace` / `use_thread` | `product-owned` | 卡片只负责把选择结果送入产品层；是否允许接管、是否跨 workspace、接管后进入什么 route 都由 orchestrator 决定 |
 | `/follow` | `product-owned` | 是否可用、是否被冻结、跟随到哪个 thread、headless/vscode 主分叉差异都属于 core 状态机 |
-| `/new` | `product-owned` | 是否进入 `new_thread_ready`、何时消耗第一条消息、request gate 是否阻断都属于 core 状态机 |
+| `/new` / `/clear` | `product-owned` | 是否进入 `new_thread_ready`、何时消耗第一条消息、request gate 是否阻断都属于 core 状态机；纯文本 `/clear` 是 `/new` 的同义 alias，不作为普通 prompt 透传给 backend |
 
 注：
 
@@ -570,7 +570,7 @@ MCP request 卡片当前新增的可视语义：
 
 - `path_picker_confirm` / `path_picker_cancel`；它们虽然也先走 `FeishuUIIntent`，但不命中 `CurrentCardMode=inline_view` 的动作集合，gateway 会立即 ack 并异步处理；当前默认终态会 sealed 回当前 picker 卡，target picker owner-flow 子步骤会 patch 回原 owner card，独立 `/sendfile` picker 的 cancel / 启动前失败 / 启动成功终态也会 patch 回当前 picker 卡。真正仍保持独立 append-only 的只剩 freshness/ownership 拒绝，或 consumer 主动返回新的 follow-up 可见项
 - attach 这类真正改变产品状态且不属于当前菜单原卡规则的动作
-- 纯文本 slash 的 `/help`、`/status`、`/stop`、`/new`、`/follow`、`/detach`；它们不会把普通文本入口升级成 replace
+- 纯文本 slash 的 `/help`、`/status`、`/stop`、`/new`、`/clear`、`/follow`、`/detach`；它们不会把普通文本入口升级成 replace
 - request 的最终 dispatch 结果，以及 notice-only 的 request invalid / request expired 处理结果
 - 各类 notice、final reply、补充预览、状态类卡片
 

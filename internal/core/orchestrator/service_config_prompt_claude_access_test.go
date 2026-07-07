@@ -217,6 +217,77 @@ func TestAccessAutoOverridesPreviouslyObservedClaudeConfirmMode(t *testing.T) {
 	}
 }
 
+func TestClearAliasStartsClaudeNewThreadWithDefaultAutoAccess(t *testing.T) {
+	now := time.Date(2026, 6, 3, 9, 20, 0, 0, time.UTC)
+	svc := newServiceForTest(&now)
+	workspaceKey := "/data/dl/droid"
+	svc.UpsertInstance(&state.InstanceRecord{
+		InstanceID:              "inst-1",
+		DisplayName:             "droid",
+		WorkspaceRoot:           workspaceKey,
+		WorkspaceKey:            workspaceKey,
+		ShortName:               "droid",
+		Backend:                 agentproto.BackendClaude,
+		ClaudeProfileID:         state.DefaultClaudeProfileID,
+		Source:                  "headless",
+		Managed:                 true,
+		Online:                  true,
+		ObservedFocusedThreadID: "thread-1",
+		Threads: map[string]*state.ThreadRecord{
+			"thread-1": {ThreadID: "thread-1", Name: "修复登录流程", CWD: workspaceKey},
+		},
+	})
+	svc.ApplySurfaceAction(control.Action{Kind: control.ActionModeCommand, SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", Text: "/mode claude"})
+	svc.ApplySurfaceAction(control.Action{Kind: control.ActionAttachInstance, SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", InstanceID: "inst-1"})
+	svc.ApplyAgentEvent("inst-1", agentproto.Event{
+		Kind:        agentproto.EventConfigObserved,
+		ThreadID:    "thread-1",
+		CWD:         workspaceKey,
+		ConfigScope: "thread",
+		AccessMode:  agentproto.AccessModeConfirm,
+	})
+
+	clearAction, ok := control.ParseFeishuTextActionWithoutCatalog("/clear")
+	if !ok {
+		t.Fatal("expected /clear to parse as a Feishu command")
+	}
+	clearAction.SurfaceSessionID = "surface-1"
+	clearAction.ChatID = "chat-1"
+	clearAction.ActorUserID = "user-1"
+	svc.ApplySurfaceAction(clearAction)
+
+	events := svc.ApplySurfaceAction(control.Action{
+		Kind:             control.ActionTextMessage,
+		SurfaceSessionID: "surface-1",
+		ChatID:           "chat-1",
+		ActorUserID:      "user-1",
+		MessageID:        "msg-1",
+		Text:             "开启新会话",
+	})
+
+	surface := svc.root.Surfaces["surface-1"]
+	item := surface.QueueItems[surface.ActiveQueueItemID]
+	if item == nil || item.RouteModeAtEnqueue != state.RouteModeNewThreadReady || queuedItemExecutionThreadID(item) != "" {
+		t.Fatalf("expected /clear to enqueue a new-thread prompt, got surface=%#v item=%#v", surface, item)
+	}
+	if item.FrozenOverride.AccessMode != agentproto.AccessModeAcceptEdits {
+		t.Fatalf("expected /clear-created Claude prompt to freeze auto access, got %#v", item.FrozenOverride)
+	}
+	var command *agentproto.Command
+	for i := range events {
+		if events[i].Command != nil && events[i].Command.Kind == agentproto.CommandPromptSend {
+			command = events[i].Command
+			break
+		}
+	}
+	if command == nil || !command.Target.CreateThreadIfMissing {
+		t.Fatalf("expected dispatched create-thread prompt after /clear, got %#v", events)
+	}
+	if command.Overrides.AccessMode != agentproto.AccessModeAcceptEdits {
+		t.Fatalf("expected dispatched Claude prompt to request auto access, got %#v", command.Overrides)
+	}
+}
+
 func TestObserveConfigClaudeThreadUnmappedPermissionModeKeepsRawObservedTruth(t *testing.T) {
 	now := time.Date(2026, 5, 4, 12, 20, 0, 0, time.UTC)
 	svc := newServiceForTest(&now)

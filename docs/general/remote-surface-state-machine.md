@@ -1,7 +1,7 @@
 # Remote Surface 核心状态机
 
 > Type: `general`
-> Updated: `2026-06-24`
+> Updated: `2026-07-07`
 > Summary: 当前实现同步了 workspace-aware headless 主链与 vscode 主链，并把当前 live 的 backend-aware 可见命令面收口到新的投影：`codex` 继续以 `workspace` 命令族作为主展示壳，`claude` 当前 live 实现也把 `switch_target` 收口到同一套 `/workspace` 父页与 `切换 / 从目录新建 / 从 GIT URL 新建 / 从 Worktree 新建 / 解除接管` 五个入口，`current_work` 继续保留 `/new` 等当前工作动作，`常用工具` 继续收口到 `/history` 与 `/sendfile`；`/list`、`/use`、裸 `/detach` 则退回 hidden + allow 兼容 alias。`send_settings` 则改成 backend 互斥入口：`codex headless` 可见 `/codexprovider`，`claude headless` 可见 `/claudeprofile`，`vscode` 两者都隐藏，且手动输入错误 backend 的命令也会显式拒绝。`/list` `/use` / target picker / workspace recency 全部只按当前 backend 过滤，且不再因为 surface/instance `ClaudeProfileID` 不同而隐藏 Claude workspace/session 候选；同时工作区一旦确定，`/workspace list` 与 alias `/list` 现在会把 `新建会话` 置顶并默认选中，`/use`、`/useall` 与锁定工作区的恢复 picker 则继续保留 `新建会话` fallback。2026-06-06 的补充是：headless 与 vscode auto-resume 现在都有重试预算上限——同一根因连续失败 `surfaceResumeMaxFailedAttempts` 次后，surface 会停止自动轮询并只发一次「已停止自动恢复」交接提示（提示用户用 /list 或 /use 手动重选），直到恢复目标变化或 daemon 重启才重新武装。2026-06-05 的补充是：headless auto-resume 的运行态只在真实恢复目标身份变化时重置 backoff / last notice，标题、更新时间等非目标元数据刷新不会把同一失败 episode 重新刷成新失败；auto-restore 启动的 managed headless 一旦连回，若 exact-thread 接管失败，也会立刻终止本轮 `PendingHeadless`、kill 这次拉起的 headless，并保留持久化恢复目标等待后续 backoff 重试。2026-05-31 的补充是：headless auto-resume 现在把“恢复 episode 的稳定失败根因”与“后续 retry 观测到的派生 busy/not_found 状态”分开记账；provider/profile/runtime 这类启动前失败会保留为本轮恢复的 canonical cause，并且只有在真正恢复成功或 target 改变后才会清空，因此后续 retry 不会再把用户提示改写成误导性的 workspace/thread busy，也不会对同一根因重复刷失败卡。2026-05-01 的新变化是：headless attach/reuse/restart/create/reject 已进一步收口成单一路径，visible 与 compatibility 继续拆层，但所有 consumer 现在都共享同一个 `desired surface contract vs observed instance contract` 解析核。结果是：
 > 1. visible 但 contract mismatch 的 workspace/session 仍然可见，不会再被 `/list`、`/use`、workspace recency、target picker 直接吞掉；
 > 2. 这些 mismatch 候选不会再假装“可直接接管”；
@@ -776,7 +776,7 @@ review mode 第一版当前不是新的 route state，而是挂在 surface 上�
 1. 普通 route change，例如 `/use`、`vscode /follow`、follow 自动切换、claim 丢失回退：
    1. 丢 staged image 与 staged file。
    2. 不会静默把未冻结附件串到新 thread。
-2. clear 语义，例如 `/stop`、`/detach`、`/mode`、`/new`、`R5` 下的 `/use` / `vscode /follow`：
+2. clear 语义，例如 `/stop`、`/detach`、`/mode`、`/new`、`/clear`、`R5` 下的 `/use` / `vscode /follow`：
    1. staged image / staged file 和 queued draft 都会被显式丢弃。
    2. 会发 discard reaction / notice。
 
@@ -802,7 +802,7 @@ review mode 第一版当前不是新的 route state，而是挂在 surface 上�
 
 ### 4.7 `R5 NewThreadReady` 是稳定态，不是半成品
 
-当前 `/new` 已实现为 clear-and-prepare：
+当前 `/new` 已实现为 clear-and-prepare；纯文本 `/clear` 是同一条 `ActionNewThread` alias，不会作为普通 prompt 透传给 backend：
 
 1. headless 主链下，只要 surface 已 attach 且当前 workspace 已知，就允许进入。
 2. `vscode` 下，`/new` 直接拒绝，并明确提示用户先 `/mode codex` 或 `/mode claude`，或继续 follow / `/use` 当前 VS Code 会话。
@@ -1680,11 +1680,12 @@ retained-offline overlay 额外规则：
 菜单与文本命令里新增：
 
 1. `/new`
-2. 菜单 `new`
-3. `/history`
-4. 菜单 `history`
+2. `/clear`
+3. 菜单 `new`
+4. `/history`
+5. 菜单 `history`
 
-其中 `/new` / 菜单 `new` 都直接映射到 `ActionNewThread`；`/history` / 菜单 `history` 都映射到 `ActionShowHistory`。
+其中 `/new` / `/clear` / 菜单 `new` 都直接映射到 `ActionNewThread`；`/history` / 菜单 `history` 都映射到 `ActionShowHistory`。
 
 同时，文本命令里新增：
 
@@ -1780,9 +1781,9 @@ retained-offline overlay 额外规则：
 
 当前审计范围内，未再发现“attach/use 成功后用户没有任何可恢复下一步”的 bug-grade 状态。
 
-## 9. `/new` 相关补充文档
+## 9. `/new` / `/clear` 相关补充文档
 
-`/new` 已经是当前实现的一部分。
+`/new` 已经是当前实现的一部分；`/clear` 是同一产品语义的文本 alias。
 
 功能级实现说明见：
 
@@ -1793,7 +1794,7 @@ retained-offline overlay 额外规则：
 凡是修改以下任一行为，都应该在提交前回看本文并同步更新：
 
 1. instance/thread attach/detach
-2. `/use`、`/follow`、`/new`
+2. `/use`、`/follow`、`/new`、`/clear`
 3. `PendingHeadless`
 4. queue/dispatch/turn ownership
 5. staged image / staged file / draft 命运

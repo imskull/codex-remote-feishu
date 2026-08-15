@@ -2,7 +2,7 @@
 
 > Type: `general`
 > Updated: `2026-08-15`
-> Summary: 说明 repo 构建产物触发本地自升级时的完整时序、内嵌 upgrade shim 的释放与启动方式、与 `/upgrade dev` 的边界、自动回滚规则，以及 repo install target 与当前 daemon self target 的语义边界。
+> Summary: 说明 repo 构建产物触发本地自升级时的完整时序、内嵌 upgrade shim 的释放与启动方式、与 `/upgrade dev` 的边界、自动回滚规则，以及 repo install target 与当前 daemon self target 的语义边界；Windows 另提供只构建 exe、由用户手动运行 daemon 的路径。
 
 ## 1. 这份文档回答什么问题
 
@@ -57,7 +57,28 @@ Windows 可以直接运行 `./upgrade-local.ps1`，它使用 PowerShell 和 repo
 
 它本身不直接停服务，也不直接覆盖 live binary。
 
-### 3.1.1 `./upgrade-self.sh`
+### 3.1.1 Windows：只生成 exe，手动运行 daemon
+
+如果 Windows 用户不希望使用 `service`、Task Scheduler 或 local-upgrade 事务，而是自行管理 daemon 进程，就**不要运行** `upgrade-local.ps1`。它会继续完成 artifact staging 并触发升级事务。
+
+只生成新的本地 executable：
+
+```powershell
+cd D:\Research\codex-remote-feishu
+go build -ldflags "-X main.branch=master" -o .\bin\codex-remote.exe .\cmd\codex-remote
+```
+
+这条命令完成后就停止；它不会写 `install-state.json`、不会注册或启动 service、不会停止任何现有 daemon，也不会修改 live installed binary。
+
+用户需要启动时，再在自己的终端显式运行：
+
+```powershell
+.\bin\codex-remote.exe daemon
+```
+
+要替换一个已经运行的手动 daemon，先由用户停止旧进程，确认端口已经释放后，再运行新 executable；不要让两个 daemon 同时监听同一个 relay/admin 端口。
+
+### 3.1.2 `./upgrade-self.sh`
 
 这是“升级当前 daemon 自身”的 repo helper。它负责：
 

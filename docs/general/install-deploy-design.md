@@ -2,7 +2,7 @@
 
 > Type: `general`
 > Updated: `2026-08-15`
-> Summary: 同步当前安装、配置与部署模型，并补记 shared packaged-install contract 的跨平台启动语义：packaged installer 不再直接决定底层 `service-manager`；first-install 走平台默认登录后自动启动，repair 保持现有启动方式；Windows NSIS 包装层现已固定为 `probe + install + 结果页` 模型。
+> Summary: 同步当前安装、配置与部署模型，并补记 shared packaged-install contract 的跨平台启动语义：packaged installer 不再直接决定底层 `service-manager`；first-install 走平台默认登录后自动启动，repair 保持现有启动方式；Windows NSIS 包装层现已固定为 `probe + install + 结果页` 模型。Windows repo 联调可选择只生成 exe 并由用户手动运行 daemon，不必注册 service。
 
 ## 1. 范围
 
@@ -101,6 +101,17 @@ Windows PowerShell:
   - 需要前台观察 daemon 启动或日志时使用
 
 仓库中不再保留单独的 `install.sh` 生命周期脚本。
+
+### 2.4.1 Windows 手动 daemon 模式
+
+Windows 上若明确选择由用户手动管理 daemon，不要使用 `upgrade-local.ps1`、`install -start-daemon` 或 `service` 子命令。只构建 executable：
+
+```powershell
+cd D:\Research\codex-remote-feishu
+go build -ldflags "-X main.branch=master" -o .\bin\codex-remote.exe .\cmd\codex-remote
+```
+
+构建完成即停止。后续仅在用户需要时，才由用户手动执行 `.\bin\codex-remote.exe daemon`。这条模式不创建或启动受管 service，也不自动停止现有进程；替换运行中的手动 daemon 前必须先停止旧进程并确认端口释放。
 
 ### 2.5 不再支持 Docker 部署
 

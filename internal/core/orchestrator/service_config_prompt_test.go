@@ -122,11 +122,11 @@ func TestStatusUsesSurfaceDefaultsWhenObservedConfigUnknown(t *testing.T) {
 	if snapshot == nil {
 		t.Fatal("expected surface snapshot")
 	}
-	if snapshot.NextPrompt.EffectiveModel != "gpt-5.4" || snapshot.NextPrompt.EffectiveModelSource != "surface_default" {
+	if snapshot.NextPrompt.EffectiveModel != "gpt-5.6-terra" || snapshot.NextPrompt.EffectiveModelSource != "surface_default" {
 		t.Fatalf("expected default model fallback, got %#v", snapshot.NextPrompt)
 	}
-	if snapshot.NextPrompt.EffectiveReasoningEffort != "xhigh" || snapshot.NextPrompt.EffectiveReasoningEffortSource != "surface_default" {
-		t.Fatalf("expected xhigh reasoning fallback, got %#v", snapshot.NextPrompt)
+	if snapshot.NextPrompt.EffectiveReasoningEffort != "medium" || snapshot.NextPrompt.EffectiveReasoningEffortSource != "surface_default" {
+		t.Fatalf("expected medium reasoning fallback, got %#v", snapshot.NextPrompt)
 	}
 	if snapshot.NextPrompt.EffectiveAccessMode != agentproto.AccessModeFullAccess || snapshot.NextPrompt.EffectiveAccessModeSource != "surface_default" {
 		t.Fatalf("expected default full access, got %#v", snapshot.NextPrompt)
@@ -168,7 +168,7 @@ func TestHeadlessTextMessageIgnoresLegacyCWDDefaultsWhenNoSurfaceOverride(t *tes
 	if item == nil {
 		t.Fatal("expected queue item")
 	}
-	if item.FrozenOverride.Model != "gpt-5.4" || item.FrozenOverride.ReasoningEffort != "xhigh" {
+	if item.FrozenOverride.Model != "gpt-5.6-terra" || item.FrozenOverride.ReasoningEffort != "medium" {
 		t.Fatalf("expected queued item to ignore legacy cwd defaults and freeze surface defaults, got %#v", item.FrozenOverride)
 	}
 	if item.FrozenOverride.AccessMode != agentproto.AccessModeFullAccess {
@@ -259,10 +259,10 @@ func TestTextMessageFreezesFallbackReasoningWhenConfigUnknown(t *testing.T) {
 	if item == nil {
 		t.Fatal("expected queue item")
 	}
-	if item.FrozenOverride.Model != "gpt-5.4" {
+	if item.FrozenOverride.Model != "gpt-5.6-terra" {
 		t.Fatalf("expected queued item to freeze default model, got %#v", item.FrozenOverride)
 	}
-	if item.FrozenOverride.ReasoningEffort != "xhigh" || item.FrozenOverride.AccessMode != agentproto.AccessModeFullAccess {
+	if item.FrozenOverride.ReasoningEffort != "medium" || item.FrozenOverride.AccessMode != agentproto.AccessModeFullAccess {
 		t.Fatalf("expected queued item to freeze fallback config, got %#v", item.FrozenOverride)
 	}
 }

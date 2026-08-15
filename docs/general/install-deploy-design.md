@@ -1,7 +1,7 @@
 # 安装与部署设计
 
 > Type: `general`
-> Updated: `2026-05-31`
+> Updated: `2026-08-15`
 > Summary: 同步当前安装、配置与部署模型，并补记 shared packaged-install contract 的跨平台启动语义：packaged installer 不再直接决定底层 `service-manager`；first-install 走平台默认登录后自动启动，repair 保持现有启动方式；Windows NSIS 包装层现已固定为 `probe + install + 结果页` 模型。
 
 ## 1. 范围
@@ -445,7 +445,7 @@ loginctl enable-linger "$USER"
 
 Windows 下文件名为 `codex-remote.exe`。
 
-源码仓库 helper `./upgrade-local.sh` 现在也遵循同一套 repo install target 解析：
+源码仓库 helper `./upgrade-local.sh` 与 Windows PowerShell 入口 `./upgrade-local.ps1` 现在也遵循同一套 repo install target 解析：
 
 - 优先读取 `.codex-remote/install-target.json`
 - 没有 binding 时，优先向上查找现有全局实例的 `install-state.json` / `config.json`

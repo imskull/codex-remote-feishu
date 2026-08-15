@@ -1,7 +1,7 @@
 # 本地自升级流程
 
 > Type: `general`
-> Updated: `2026-04-27`
+> Updated: `2026-08-15`
 > Summary: 说明 repo 构建产物触发本地自升级时的完整时序、内嵌 upgrade shim 的释放与启动方式、与 `/upgrade dev` 的边界、自动回滚规则，以及 repo install target 与当前 daemon self target 的语义边界。
 
 ## 1. 这份文档回答什么问题
@@ -43,7 +43,7 @@
 
 ## 3. 参与者与角色
 
-### 3.1 `./upgrade-local.sh`
+### 3.1 `./upgrade-local.sh` / `./upgrade-local.ps1`
 
 这是源码仓库 helper。它负责：
 
@@ -52,6 +52,8 @@
 - 解析当前 repo 绑定到哪个已安装实例
 - 把构建产物复制到该实例的固定 local-upgrade artifact 路径
 - 用刚构建出的 binary 调 `local-upgrade`
+
+Windows 可以直接运行 `./upgrade-local.ps1`，它使用 PowerShell 和 repo-install-target 的 JSON 输出，不依赖 Git Bash。参数对应为 `-Instance`、`-BaseDir`、`-Slot` 与 `-AllowDirty`。
 
 它本身不直接停服务，也不直接覆盖 live binary。
 

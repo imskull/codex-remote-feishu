@@ -161,6 +161,10 @@ func (s *Service) openTargetPickerAddWorkspacePathPicker(surface *state.SurfaceC
 	default:
 		return notice(surface, "target_picker_selection_missing", "当前要选择的目录字段无效，请重新打开卡片。")
 	}
+	// The retained draft can be on a different Windows volume (or UNC share)
+	// than the currently attached workspace.  Scope the picker to its actual
+	// initial path so the initial boundary check and the visible root agree.
+	rootPath, initialPath = workspacePickerPaths(initialPath)
 	return s.openPathPickerWithInline(surface, surface.ActorUserID, control.PathPickerRequest{
 		Mode:         control.PathPickerModeDirectory,
 		Title:        title,

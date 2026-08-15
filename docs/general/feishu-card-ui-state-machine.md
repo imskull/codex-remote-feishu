@@ -1,7 +1,7 @@
 # Feishu 卡片 UI 状态机
 
 > Type: `general`
-> Updated: `2026-07-07`
+> Updated: `2026-08-15`
 > Summary: 当前 live 的 Feishu 卡片 UI 已把 workspace/page/request/review 等 owner-flow 收口到稳定的 page / picker / request substrate；immediate `select_static` callback 的取值规则统一落在 `internal/adapter/feishu/selectflow`，按 `payload value -> form_value[field_name] -> option/options` 恢复，避免群聊回调把旧 option 误当成新选择；card callback 同步 replace 现在受 2.5 秒本地等待上限保护，超时后先 ack 再异步 patch/reply；`/workspace list` 与 alias `/list` 在工作区已确定后也会把 `新建会话` 作为合法 session 选项，并默认选中它；显式表单提交家族仍保持各自既有 submit 语义。
 
 ## 1. 文档定位
@@ -544,7 +544,7 @@ MCP request 卡片当前新增的可视语义：
   - `从目录新建` 检查通过后，主按钮才会切成 `接入并继续` 或 `创建并继续`；目录或新目录名任一变化，旧检查结果会失效并退回 `检查目标目录`
   - `从目录新建` 当前不再在 path picker 阶段隐藏 busy workspace 父目录；busy/known workspace/目标目录已存在/非法目录名这类最终目标路径语义统一后移到 `检查目标目录`
   - `从目录新建` 命中已知 workspace 时，检查结果会明确提示将复用该工作区，并允许第二次确认后进入新会话待命
-  - `target_picker_open_path_picker` 当前会把主卡 inline replace 成 path picker 子步骤；子步骤复用 owner-card 标题，并展示 step tag、单题问题、允许范围与当前位置；path picker confirm/cancel 后不会再走同步 inline restore，而是异步 ack 后把最新 target picker 主卡 patch 回同一张 owner card
+  - `target_picker_open_path_picker` 当前会把主卡 inline replace 成 path picker 子步骤；子步骤复用 owner-card 标题，并展示 step tag、单题问题、允许范围与当前位置；Windows 初始目录若来自保留草稿，会同步重算为同盘符或同 UNC share 的允许根，避免卡片刚打开就把合法跨盘/共享目录误报为越界；path picker confirm/cancel 后不会再走同步 inline restore，而是异步 ack 后把最新 target picker 主卡 patch 回同一张 owner card
   - path picker 当前也不再把全部目录/文件候选直接灌进 `select_static`；目录模式单下拉、文件模式目录/文件双下拉，以及 target-picker owner-subpage 的 compact 目录下拉，都会按 Feishu transport byte budget 动态分页，并确保 footer 仍可见
   - path picker dropdown 翻页统一走 `path_picker_page(picker_id + field_name + cursor)`；`cursor` 是 start-index，不是固定页码，目录 lane 固定项 `.` / `..` 不参与分页计数
   - 目录页翻页只更新当前可见目录候选，并保留当前目录；文件页翻页会主动清空文件选择并禁用 confirm，避免 invisible confirm

@@ -23,6 +23,19 @@ func TestWorkspacePickerPathsForGOOSWindowsUsesVolumeRootAsInitialWhenWorkspaceE
 	}
 }
 
+func TestWorkspacePickerPathsForGOOSWindowsUsesUNCShareAsRoot(t *testing.T) {
+	root, initial := workspacePickerPathsForGOOS("windows", `\\fileserver\engineering\demo`, `C:\Users\demo`)
+	if root != "//fileserver/engineering/" || initial != `\\fileserver\engineering\demo` {
+		t.Fatalf("workspacePickerPathsForGOOS(windows, UNC) = (%q, %q)", root, initial)
+	}
+}
+
+func TestWindowsPickerRootRecognizesForwardSlashUNCShare(t *testing.T) {
+	if got := windowsPickerRoot("//fileserver/engineering/demo"); got != "//fileserver/engineering/" {
+		t.Fatalf("windowsPickerRoot(UNC) = %q, want UNC share root", got)
+	}
+}
+
 func TestWorkspacePickerPathsForGOOSUnixUsesFilesystemRootAsInitialWhenWorkspaceEmpty(t *testing.T) {
 	root, initial := workspacePickerPathsForGOOS("linux", "", "")
 	if root != "/" || initial != "/" {

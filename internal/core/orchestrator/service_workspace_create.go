@@ -91,8 +91,8 @@ func workspaceCreatePickerRootForGOOSWithFallback(goos, initialPath, windowsFall
 			if candidate == "" {
 				continue
 			}
-			if volume := windowsVolumeRoot(candidate); volume != "" {
-				return volume
+			if root := windowsPickerRoot(candidate); root != "" {
+				return root
 			}
 		}
 	}
@@ -113,6 +113,25 @@ func windowsVolumeRoot(path string) string {
 		return ""
 	}
 	return path[:2] + "/"
+}
+
+func windowsPickerRoot(path string) string {
+	if volume := windowsVolumeRoot(path); volume != "" {
+		return volume
+	}
+	return windowsUNCShareRoot(path)
+}
+
+func windowsUNCShareRoot(path string) string {
+	path = strings.ReplaceAll(strings.TrimSpace(path), `\`, "/")
+	if !strings.HasPrefix(path, "//") {
+		return ""
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "//"), "/")
+	if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return ""
+	}
+	return "//" + parts[0] + "/" + parts[1] + "/"
 }
 
 func (s *Service) startFreshWorkspaceHeadless(surface *state.SurfaceConsoleRecord, workspaceKey string) []eventcontract.Event {

@@ -3,10 +3,15 @@ package state
 import (
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
 func NormalizeWorkspaceKey(value string) string {
+	return normalizeWorkspaceKeyForGOOS(runtime.GOOS, value)
+}
+
+func normalizeWorkspaceKeyForGOOS(goos, value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
@@ -15,7 +20,21 @@ func NormalizeWorkspaceKey(value string) string {
 	if normalized == "." {
 		return ""
 	}
-	return filepath.ToSlash(normalized)
+	normalized = filepath.ToSlash(normalized)
+	if strings.EqualFold(strings.TrimSpace(goos), "windows") {
+		normalized = trimWindowsExtendedPathPrefix(normalized)
+	}
+	return normalized
+}
+
+func trimWindowsExtendedPathPrefix(value string) string {
+	if strings.HasPrefix(value, "//?/") {
+		if len(value) >= len("//?/UNC/") && strings.EqualFold(value[:len("//?/UNC/")], "//?/UNC/") {
+			return "//" + value[len("//?/UNC/"):]
+		}
+		return value[len("//?/"):]
+	}
+	return value
 }
 
 func ResolveWorkspaceKey(values ...string) string {

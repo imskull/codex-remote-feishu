@@ -19,6 +19,20 @@ func TestResolveWorkspaceKey(t *testing.T) {
 	}
 }
 
+func TestNormalizeWorkspaceKeyForGOOSWindowsStripsExtendedVolumePrefix(t *testing.T) {
+	got := normalizeWorkspaceKeyForGOOS("windows", `\\?\D:\AI\campaigns\active`)
+	if got != "D:/AI/campaigns/active" {
+		t.Fatalf("normalizeWorkspaceKeyForGOOS(windows) = %q, want volume path without extended prefix", got)
+	}
+}
+
+func TestNormalizeWorkspaceKeyForGOOSWindowsPreservesUNCPath(t *testing.T) {
+	got := normalizeWorkspaceKeyForGOOS("windows", `\\?\UNC\fileserver\campaigns\active`)
+	if got != "//fileserver/campaigns/active" {
+		t.Fatalf("normalizeWorkspaceKeyForGOOS(windows) = %q, want UNC path without extended prefix", got)
+	}
+}
+
 func TestWorkspaceShortName(t *testing.T) {
 	if got := WorkspaceShortName(testutil.WorkspacePath("data", "dl", "work", "..", "droid") + "/"); got != "droid" {
 		t.Fatalf("WorkspaceShortName() = %q, want %q", got, "droid")

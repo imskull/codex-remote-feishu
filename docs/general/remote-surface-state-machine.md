@@ -579,7 +579,8 @@ review mode 第一版当前不是新的 route state，而是挂在 surface 上�
 5. 选择工作区、选择会话，或从主卡打开 path picker 子步骤时，只会刷新 target picker 本身或其子步骤，不会立即 attach / switch。
    1. `/workspace list` 主路径用的是 `target_picker_select_workspace` / `target_picker_select_session`。
    2. `/workspace new dir` / `/workspace new git` 主路径用的是 `target_picker_open_path_picker`；`/workspace new worktree` 主路径则复用 `target_picker_select_workspace` / `target_picker_page` 刷新基准工作区 dropdown。Windows 的 picker 允许根必须与实际初始路径同源：盘符路径锚定对应盘符根，UNC 路径锚定对应 `//server/share/` 根；保留的目录草稿覆盖当前工作区初始目录时，会重新计算允许根，因此不会因跨盘或 UNC 路径被误判为越界。
-   3. 这些回调属于 same-context pure navigation，满足 daemon freshness 时会 inline replace 当前卡；`target_picker_cancel` 也会 inline replace，但它的效果是把当前 owner card 收束成 sealed terminal，并清掉 active picker / owner-card flow。
+   3. Windows host path 在写入 workspace key、headless launch contract 或 child CWD 前都会去掉 extended-length `//?/` 前缀；卷路径保持 `D:/...`，UNC 路径保持 `//server/share/...`，避免已经接入的 workspace 被 Codex 子进程误判为 malformed。
+   4. 这些回调属于 same-context pure navigation，满足 daemon freshness 时会 inline replace 当前卡；`target_picker_cancel` 也会 inline replace，但它的效果是把当前 owner card 收束成 sealed terminal，并清掉 active picker / owner-card flow。
 6. 真正的产品状态变化只发生在 `target_picker_confirm`。
    1. `/workspace list` 选既有会话时，复用现有 `/use` / `use_thread` / cross-workspace attach 语义；必要时会先统一经过 `resolveWorkspaceContract(...)` 与对应的 workspace continuation owner，再落到 attach / restart-managed / fresh-start 的单一路径。
    2. `/workspace new dir` 下，`target_picker_open_path_picker` 会先打开目录 path picker；confirm/cancel 回调会先异步 ack，再把最新主卡 patch 回同一张 owner card。主卡只要已经回填出有效目录，`target_picker_confirm` 就会继续：若命中已知 workspace，则直接复用该工作区并进入新会话待命；若不是已知 workspace，则把该目录解析成 workspace，并按 `PrepareNewThread=true` 的语义进入 `R5` / fresh headless `R5` 路径。

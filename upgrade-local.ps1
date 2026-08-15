@@ -72,7 +72,7 @@ if (-not $AllowDirty) {
 }
 
 Write-Output "[1/5] git pull --ff-only"
-Invoke-Checked git pull --ff-only
+Invoke-Checked -FilePath git -Arguments @("pull", "--ff-only")
 
 Write-Output "[2/5] resolve repo install target"
 $targetArgs = @("run", "./scripts/install/repo-install-target", "--format", "json")
@@ -97,7 +97,13 @@ $binDir = Join-Path $rootDir "bin"
 $buildOutput = Join-Path $binDir "codex-remote.exe"
 Write-Output "[3/5] build $buildOutput"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-Invoke-Checked $GoBin build -ldflags "-X main.branch=$(Get-BuildBranch)" -o $buildOutput (Join-Path $rootDir "cmd/codex-remote")
+$buildArgs = @(
+  "build",
+  "-ldflags", "-X main.branch=$(Get-BuildBranch)",
+  "-o", $buildOutput,
+  (Join-Path $rootDir "cmd/codex-remote")
+)
+Invoke-Checked -FilePath $GoBin -Arguments $buildArgs
 
 if (-not (Test-Path -LiteralPath $target.statePath -PathType Leaf)) {
   throw "install state not found: $($target.statePath)`nBuild .\bin\codex-remote.exe and run '.\bin\codex-remote.exe install -bootstrap-only -start-daemon' first, or pass -BaseDir for the installed environment."
@@ -121,7 +127,7 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($Slot)) {
     $upgradeArgs += @("-slot", $Slot)
   }
-  Invoke-Checked $buildOutput @upgradeArgs
+  Invoke-Checked -FilePath $buildOutput -Arguments $upgradeArgs
 } finally {
   $env:CODEX_REMOTE_REPO_ROOT = $priorRepoRoot
   foreach ($name in $proxyVariables) {

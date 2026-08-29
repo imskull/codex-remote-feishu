@@ -458,6 +458,14 @@ When corresponding logic carriers changed, do **not** commit until: guardrail sk
 - `bash scripts/check/go-file-length.sh` is mandatory; do not bypass with `--no-verify` or equivalent.
 - If blocked by oversized files, perform structure-first split and keep behavior stable unless behavior change is in scope.
 
+## Source Build Artifact Policy
+
+- Whenever repository source code is modified, automatically regenerate `bin/codex-remote.exe` before committing or handing off the finished work.
+- Do not ask for confirmation before rebuilding it.
+- Build it from the repository root with:
+  - `go build -o .\bin\codex-remote.exe .\cmd\codex-remote`
+- Treat a failed regeneration as a validation failure; do not present the source-code change as complete while the binary is stale.
+
 ## Proxy / Wrapper Policy
 
 - For local tests/debug against localhost, unset proxy env first:

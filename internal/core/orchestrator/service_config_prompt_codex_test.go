@@ -52,7 +52,7 @@ func TestCodexHeadlessObservedCWDDefaultsDoNotPersistWorkspaceDefaults(t *testin
 	if snapshot == nil {
 		t.Fatal("expected surface snapshot")
 	}
-	if snapshot.NextPrompt.EffectiveModel != "gpt-5.6-terra" || snapshot.NextPrompt.EffectiveModelSource != "surface_default" {
+	if snapshot.NextPrompt.EffectiveModel != "gpt-5.6-sol" || snapshot.NextPrompt.EffectiveModelSource != "surface_default" {
 		t.Fatalf("expected codex observed cwd model not to affect snapshot, got %#v", snapshot.NextPrompt)
 	}
 	if snapshot.NextPrompt.EffectiveReasoningEffort != "medium" || snapshot.NextPrompt.EffectiveReasoningEffortSource != "surface_default" {
@@ -77,7 +77,7 @@ func TestCodexHeadlessObservedCWDDefaultsDoNotPersistWorkspaceDefaults(t *testin
 	if item == nil {
 		t.Fatal("expected queue item")
 	}
-	if item.FrozenOverride.Model != "gpt-5.6-terra" || item.FrozenOverride.ReasoningEffort != "medium" {
+	if item.FrozenOverride.Model != "gpt-5.6-sol" || item.FrozenOverride.ReasoningEffort != "medium" {
 		t.Fatalf("expected queue item to freeze fallback model/effort, got %#v", item.FrozenOverride)
 	}
 	if item.FrozenOverride.AccessMode != agentproto.AccessModeFullAccess {

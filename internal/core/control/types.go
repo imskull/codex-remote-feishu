@@ -358,6 +358,7 @@ type Notice struct {
 	Text                  string
 	ThemeKey              string
 	Sections              []FeishuCardTextSection
+	PromptSettings        *PromptRouteSummary
 	DeliveryClass         NoticeDeliveryClass
 	DeliveryFamily        NoticeDeliveryFamily
 	DeliveryDedupKey      string

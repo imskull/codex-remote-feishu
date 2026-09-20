@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	projectorpkg "github.com/kxn/codex-remote-feishu/internal/adapter/feishu/projector"
 	"github.com/kxn/codex-remote-feishu/internal/core/agentproto"
 	"github.com/kxn/codex-remote-feishu/internal/core/control"
 	"github.com/kxn/codex-remote-feishu/internal/core/state"
@@ -242,12 +243,7 @@ func formatSnapshotEffectivePromptPlain(summary control.PromptRouteSummary) stri
 	if summary.UsesLocalRequestedOverrides {
 		return formatSnapshotLocalRequestedPromptPlain(summary)
 	}
-	return strings.Join([]string{
-		"Plan " + displaySnapshotPlanMode(summary.EffectivePlanMode),
-		"模型 " + displaySnapshotValue(summary.EffectiveModel),
-		"推理 " + displaySnapshotValue(summary.EffectiveReasoningEffort),
-		"权限 " + displaySnapshotAccessMode(summary.EffectiveAccessMode),
-	}, "，")
+	return projectorpkg.FormatEffectivePromptSettings(summary)
 }
 
 func formatSnapshotLocalRequestedPromptPlain(summary control.PromptRouteSummary) string {

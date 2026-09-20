@@ -61,9 +61,9 @@ func (s *Service) prepareNewThreadWithOverlayCleanup(surface *state.SurfaceConso
 		events = append(events, s.discardDrafts(surface)...)
 		surface.PreparedAt = s.now()
 		if discarded == 0 {
-			return append(events, notice(surface, "already_new_thread_ready", "当前已经在新建会话待命状态。下一条文本会创建新会话。")...)
+			return append(events, s.newThreadReadyNotice(surface, "already_new_thread_ready", "当前已经在新建会话待命状态。下一条文本会创建新会话。")...)
 		}
-		return append(events, notice(surface, "new_thread_ready_reset", fmt.Sprintf("已丢弃 %d 条未发送输入。下一条文本会创建新会话。", discarded))...)
+		return append(events, s.newThreadReadyNotice(surface, "new_thread_ready_reset", fmt.Sprintf("已丢弃 %d 条未发送输入。下一条文本会创建新会话。", discarded))...)
 	}
 	cwd, threadID, ok := s.prepareNewThreadBase(surface, inst)
 	if !ok {
@@ -98,7 +98,7 @@ func (s *Service) prepareNewThreadWithOverlayCleanup(surface *state.SurfaceConso
 	if discarded > 0 {
 		text = fmt.Sprintf("已清空当前远端上下文，并丢弃 %d 条未发送输入。下一条文本会创建新会话。", discarded)
 	}
-	return append(events, notice(surface, "new_thread_ready", text)...)
+	return append(events, s.newThreadReadyNotice(surface, "new_thread_ready", text)...)
 }
 
 func (s *Service) prepareNewThreadBase(surface *state.SurfaceConsoleRecord, inst *state.InstanceRecord) (string, string, bool) {

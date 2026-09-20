@@ -15,7 +15,7 @@ func ProjectNoticeContent(notice control.Notice) (string, []map[string]any) {
 }
 
 func projectNoticeElements(notice control.Notice) []map[string]any {
-	if len(notice.Sections) == 0 {
+	if len(notice.Sections) == 0 && notice.PromptSettings == nil {
 		return nil
 	}
 	sections := make([]control.FeishuCardTextSection, 0, len(notice.Sections))
@@ -25,6 +25,9 @@ func projectNoticeElements(notice control.Notice) []map[string]any {
 			continue
 		}
 		sections = append(sections, normalized)
+	}
+	if notice.PromptSettings != nil {
+		sections = append(sections, control.FeishuCardTextSection{Lines: []string{FormatEffectivePromptSettings(*notice.PromptSettings)}})
 	}
 	if len(sections) == 0 {
 		return nil

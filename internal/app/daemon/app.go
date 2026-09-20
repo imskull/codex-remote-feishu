@@ -133,6 +133,7 @@ type App struct {
 	feishuRuntime               feishuRuntimeState
 	cronRuntime                 cronRuntimeState
 	claudeWorkspaceProfileState claudeWorkspaceProfileRuntimeState
+	modelPreferences            modelPreferencesRuntimeState
 
 	adminAuth                  *adminauth.Manager
 	admin                      adminRuntimeState
@@ -305,6 +306,7 @@ func (a *App) SetHeadlessRuntime(cfg HeadlessRuntimeConfig) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.configureClaudeWorkspaceProfileStateLocked(cfg.Paths.StateDir)
+	a.configureModelPreferencesLocked(cfg.Paths.StateDir)
 	a.configureSurfaceResumeStateLocked(cfg.Paths.StateDir)
 	if loaded, err := a.loadAdminConfig(); err == nil {
 		a.syncCodexProvidersCatalogLocked(loaded.Config)

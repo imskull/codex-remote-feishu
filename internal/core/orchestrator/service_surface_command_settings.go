@@ -592,10 +592,11 @@ func (s *Service) handleModelCommand(surface *state.SurfaceConsoleRecord, action
 			override.Model = ""
 			override.ReasoningEffort = ""
 		}, func(control.PromptRouteSummary) surfaceSettingFeedback {
+			text := s.modelPreferenceFeedback(surface, "已清除飞书临时模型覆盖。之后从飞书发送的消息将恢复使用底层真实配置。", "已清除模型和推理强度偏好。新会话将使用默认配置。")
 			return surfaceSettingFeedback{
 				NoticeCode:     "surface_override_cleared",
-				NoticeText:     "已清除飞书临时模型覆盖。之后从飞书发送的消息将恢复使用底层真实配置。",
-				CardStatusText: "已清除飞书临时模型覆盖。之后从飞书发送的消息将恢复使用底层真实配置。",
+				NoticeText:     text,
+				CardStatusText: text,
 			}
 		})
 	}
@@ -625,10 +626,11 @@ func (s *Service) handleModelCommand(surface *state.SurfaceConsoleRecord, action
 			override.ReasoningEffort = effort
 		}
 	}, func(summary control.PromptRouteSummary) surfaceSettingFeedback {
+		text := s.modelPreferenceFeedback(surface, "已更新飞书临时模型覆盖。", "已保存模型偏好。当前工作区使用此 Provider 的新会话将沿用该选择。")
 		return surfaceSettingFeedback{
 			NoticeCode:     "surface_override_updated",
-			NoticeText:     formatOverrideNotice(summary, "已更新飞书临时模型覆盖。"),
-			CardStatusText: "已更新飞书临时模型覆盖。",
+			NoticeText:     formatOverrideNotice(summary, text),
+			CardStatusText: text,
 		}
 	})
 }
@@ -646,10 +648,11 @@ func (s *Service) handleReasoningCommand(surface *state.SurfaceConsoleRecord, ac
 		return s.applyPromptOverrideChange(surface, action, inst, func(override *state.ModelConfigRecord) {
 			override.ReasoningEffort = ""
 		}, func(control.PromptRouteSummary) surfaceSettingFeedback {
+			text := s.modelPreferenceFeedback(surface, "已清除飞书临时推理强度覆盖。", "已清除推理强度偏好。新会话将使用默认推理强度。")
 			return surfaceSettingFeedback{
 				NoticeCode:     "surface_override_reasoning_cleared",
-				NoticeText:     "已清除飞书临时推理强度覆盖。",
-				CardStatusText: "已清除飞书临时推理强度覆盖。",
+				NoticeText:     text,
+				CardStatusText: text,
 			}
 		})
 	}
@@ -668,10 +671,11 @@ func (s *Service) handleReasoningCommand(surface *state.SurfaceConsoleRecord, ac
 	return s.applyPromptOverrideChange(surface, action, inst, func(override *state.ModelConfigRecord) {
 		override.ReasoningEffort = effort
 	}, func(summary control.PromptRouteSummary) surfaceSettingFeedback {
+		text := s.modelPreferenceFeedback(surface, "已更新飞书临时推理强度覆盖。", "已保存推理强度偏好。当前工作区使用此 Provider 的新会话将沿用该选择。")
 		return surfaceSettingFeedback{
 			NoticeCode:     "surface_override_updated",
-			NoticeText:     formatOverrideNotice(summary, "已更新飞书临时推理强度覆盖。"),
-			CardStatusText: "已更新飞书临时推理强度覆盖。",
+			NoticeText:     formatOverrideNotice(summary, text),
+			CardStatusText: text,
 		}
 	})
 }

@@ -189,6 +189,7 @@ func (a *App) HandleGatewayAction(ctx context.Context, action control.Action) *f
 func (a *App) handleAction(ctx context.Context, action control.Action) *feishu.ActionResult {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	defer a.syncModelPreferencesLocked()
 	if a.shuttingDown {
 		log.Printf(
 			"surface action ignored during shutdown: surface=%s chat=%s actor=%s kind=%s message=%s",

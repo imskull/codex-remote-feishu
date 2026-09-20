@@ -141,11 +141,11 @@ func TestStatusIgnoresHeadlessObservedCWDDefaultsAndAppliesSurfaceOverride(t *te
 	if snapshot.NextPrompt.CreateThread || snapshot.NextPrompt.CWD != "/data/dl/droid" {
 		t.Fatalf("expected unbound surface to stay blocked in workspace root, got %#v", snapshot.NextPrompt)
 	}
-	if snapshot.NextPrompt.BaseModel != "" || snapshot.NextPrompt.BaseReasoningEffort != "" {
-		t.Fatalf("expected headless cwd defaults to stay ignored, got %#v", snapshot.NextPrompt)
+	if snapshot.NextPrompt.BaseModel != "gpt-5.4" || snapshot.NextPrompt.BaseReasoningEffort != "high" {
+		t.Fatalf("expected explicit model choice to become workspace preference, got %#v", snapshot.NextPrompt)
 	}
-	if snapshot.NextPrompt.BaseModelSource != "unknown" || snapshot.NextPrompt.BaseReasoningEffortSource != "unknown" {
-		t.Fatalf("expected headless cwd default sources to stay unknown, got %#v", snapshot.NextPrompt)
+	if snapshot.NextPrompt.BaseModelSource != "workspace_default" || snapshot.NextPrompt.BaseReasoningEffortSource != "workspace_default" {
+		t.Fatalf("expected saved preference sources, got %#v", snapshot.NextPrompt)
 	}
 	if snapshot.NextPrompt.EffectiveModel != "gpt-5.4" || snapshot.NextPrompt.EffectiveReasoningEffort != "high" {
 		t.Fatalf("expected effective config to use surface override, got %#v", snapshot.NextPrompt)

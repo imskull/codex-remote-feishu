@@ -608,7 +608,7 @@ func TestHandleGatewayActionReplacesCardOwnedModelPresetApply(t *testing.T) {
 	if result.ReplaceCurrentCard.CardTitle != "使用模型" {
 		t.Fatalf("unexpected replacement card title: %#v", result.ReplaceCurrentCard)
 	}
-	if !strings.Contains(operationCardText(*result.ReplaceCurrentCard), "已更新飞书临时模型覆盖") {
+	if !strings.Contains(operationCardText(*result.ReplaceCurrentCard), "已保存模型偏好") {
 		t.Fatalf("expected success status on replacement model card, got %#v", result.ReplaceCurrentCard.CardElements)
 	}
 }

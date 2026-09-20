@@ -31,6 +31,7 @@ func (s *Service) applyPromptOverrideChange(surface *state.SurfaceConsoleRecord,
 		override := surface.PromptOverride
 		mutate(&override)
 		surface.PromptOverride = compactPromptOverride(override)
+		s.rememberCodexModelChoice(surface, inst, action, mutate)
 	}, func() surfaceSettingFeedback {
 		summary := s.resolveNextPromptSummary(inst, surface, "", "", state.ModelConfigRecord{})
 		return build(summary)

@@ -116,6 +116,8 @@ func promptValueCardSections(view FeishuCatalogConfigView) []FeishuCardTextSecti
 
 func sharedAuthorityCurrentValueLabel(source string) string {
 	switch strings.TrimSpace(source) {
+	case "chat_preference":
+		return "当前聊天偏好"
 	case "thread", "cwd_default", "workspace_default":
 		return "当前观察到"
 	default:

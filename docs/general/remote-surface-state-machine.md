@@ -195,12 +195,12 @@ surface 不是单一枚举，而是五层正交状态叠加。
    9. 点击提案计划卡的 `直接执行` / `清空上下文并执行`，会先把当前 surface 的 `PlanMode` 切回显式 `off`，再继续派发 follow-up turn；`取消` 只 seal 卡片，不改 route。
 9. `PromptOverride` 当前承载飞书侧显式 model / reasoning / access requested override：
    1. headless 主链为了保持现有执行合同，queue item 仍会冻结最终 effective model / reasoning / access。
-   2. headless 主链的 base config 当前只读取 thread explicit config、backend/profile-scoped workspace defaults 与 surface override；旧 `InstanceRecord.CWDDefaults` 和旧 workspace-defaults storage key 都不再参与 headless fallback。`CWDDefaults` 仅保留给 `vscode` 的 observed-config 展示与 freeze 语义。
+   2. headless 主链的 base config 当前读取 thread explicit config、Codex chat/provider 模型偏好与 backend/profile-scoped workspace defaults，之后应用 surface override；旧 `InstanceRecord.CWDDefaults` 和旧 workspace-defaults storage key 都不再参与 headless fallback。`CWDDefaults` 仅保留给 `vscode` 的 observed-config 展示与 freeze 语义。
    3. Claude headless 的 runtime `permissionMode` 现在会通过标准 `config.observed(thread)` 回填 thread observed access/plan；`/status`、`/access`、`/plan` 和 headless prompt freeze 都读这条 observed state，而不是把它误持久成 workspace default。
    4. Claude headless 在没有飞书显式 `/access` override 时，下一条 prompt 的 base access 会优先跟随当前 thread observed access；没有 observed access 时默认 auto mode（本地 `accept_edits` / Claude native `auto`）；旧的 Claude workspace default access 不再参与这条解析。若当前 thread 已因 `/access confirm|full` 观测为非 auto，用户需要 `/access auto` 显式切回 auto mode。
    5. `vscode` 主链只冻结飞书显式 requested override；observed cwd/thread config 仍可用于 `/status` / 参数卡展示，但不会在没有本地显式覆盖时被重新下发给 backend。
    6. Codex translator 收到 empty access override 时不会改写 `approvalPolicy` / `sandboxPolicy`；只有显式 `full` / `confirm` 才会下发对应权限策略。
-   7. Codex headless 显式 `/model` 与 `/reasoning` 选择同时保存为 workspace + Codex provider 隔离的模型偏好，daemon 写入 `model-preferences.json` 并在启动时恢复。新会话无 thread explicit config 时使用该偏好；detach/reattach 清理临时 override，但不清理已保存偏好。`/model clear` 同时清除保存的 model/reasoning；`/reasoning clear` 只清除 reasoning。runtime observed config、自动 model reroute、VS Code override 与 Claude profile 不会写入该偏好；权限与 plan 状态不随模型偏好保存。队列继续冻结入队时的最终配置，后续修改偏好不重定向或改写已有队列项。
+   7. Codex headless 显式 `/model` 与 `/reasoning` 选择同时保存为 gateway + chat + Codex provider 隔离的模型偏好。同一聊天跨工作区沿用最后选择，不同聊天、bot 或 provider 互不串用；偏好不按 actor 切分。daemon 写入 `model-preferences.json` v2 并在启动时恢复，v1 的 workspace key 缺少聊天身份，不能猜测归属或继续作为兼容 fallback。新会话无 thread explicit config 时优先使用聊天偏好（source=`chat_preference`）；detach/reattach 清理临时 override，但不清理聊天偏好。`/model clear` 同时清除该聊天/provider 保存的 model/reasoning；`/reasoning clear` 只清除 reasoning。runtime observed config、自动 model reroute、VS Code override 与 Claude profile 不会写入该偏好；权限与 plan 状态不随模型偏好保存。队列继续冻结入队时的最终配置，后续修改偏好不重定向或改写已有队列项。
 10. headless workspace-first 主链当前已经完成这一轮产品收窄：
    1. bare `/workspace` 是工作会话父页，固定展示 `切换`、`从目录新建`、`从 GIT URL 新建`、`解除接管` 四个入口；bare `/workspace new` 是只含三条新建路径的子页。
    2. `/workspace list` 与 alias `/list` / `/use` / `/useall` / `show_workspace_threads` 都收敛到同一张 `切换工作会话` 卡。

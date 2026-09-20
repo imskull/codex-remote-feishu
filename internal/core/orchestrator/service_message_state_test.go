@@ -142,9 +142,9 @@ func TestStatusIgnoresHeadlessObservedCWDDefaultsAndAppliesSurfaceOverride(t *te
 		t.Fatalf("expected unbound surface to stay blocked in workspace root, got %#v", snapshot.NextPrompt)
 	}
 	if snapshot.NextPrompt.BaseModel != "gpt-5.4" || snapshot.NextPrompt.BaseReasoningEffort != "high" {
-		t.Fatalf("expected explicit model choice to become workspace preference, got %#v", snapshot.NextPrompt)
+		t.Fatalf("expected explicit model choice to become chat preference, got %#v", snapshot.NextPrompt)
 	}
-	if snapshot.NextPrompt.BaseModelSource != "workspace_default" || snapshot.NextPrompt.BaseReasoningEffortSource != "workspace_default" {
+	if snapshot.NextPrompt.BaseModelSource != "chat_preference" || snapshot.NextPrompt.BaseReasoningEffortSource != "chat_preference" {
 		t.Fatalf("expected saved preference sources, got %#v", snapshot.NextPrompt)
 	}
 	if snapshot.NextPrompt.EffectiveModel != "gpt-5.4" || snapshot.NextPrompt.EffectiveReasoningEffort != "high" {

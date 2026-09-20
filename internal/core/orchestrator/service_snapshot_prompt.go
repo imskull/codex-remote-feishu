@@ -267,6 +267,14 @@ func (s *Service) resolveBasePromptConfig(inst *state.InstanceRecord, surface *s
 			}
 		}
 	}
+	if preference := s.root.ChatModelPreferences[s.chatModelPreferenceKey(surface, inst)]; !modelConfigRecordEmpty(preference) {
+		if model.Value == "" && preference.Model != "" {
+			model = configValue{Value: preference.Model, Source: "chat_preference"}
+		}
+		if effort.Value == "" && preference.ReasoningEffort != "" {
+			effort = configValue{Value: preference.ReasoningEffort, Source: "chat_preference"}
+		}
+	}
 	if defaults, ok := s.resolveWorkspaceDefaults(inst, surface, cwd); ok {
 		if model.Value == "" && defaults.Model != "" {
 			model = configValue{Value: defaults.Model, Source: "workspace_default"}

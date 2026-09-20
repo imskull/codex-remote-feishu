@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,31 @@ import (
 	"github.com/kxn/codex-remote-feishu/internal/core/orchestrator"
 	"github.com/kxn/codex-remote-feishu/internal/core/state"
 )
+
+func TestWorkspacePreferencesAreNotAssignedToAnArbitraryChat(t *testing.T) {
+	dir := t.TempDir()
+	oldKey := state.WorkspaceDefaultsStorageKey("/workspace/project", state.CodexInstanceBackendContract(""))
+	raw, err := json.Marshal(modelPreferencesFile{Version: 1, Entries: map[string]state.ModelConfigRecord{oldKey: {Model: "gpt-6-astra"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "model-preferences.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{service: orchestrator.NewService(time.Now, orchestrator.Config{}, nil)}
+	a.configureModelPreferencesLocked(dir)
+	if len(a.service.ModelPreferences()) != 0 {
+		t.Fatal("workspace preference leaked into chat scope")
+	}
+	key := state.ChatModelPreferenceKey("app-1", "chat-1", "")
+	a.service.MaterializeModelPreferences(map[string]state.ModelConfigRecord{key: {Model: "gpt-6-astra", ReasoningEffort: "medium"}})
+	a.syncModelPreferencesLocked()
+	b := &App{service: orchestrator.NewService(time.Now, orchestrator.Config{}, nil)}
+	b.configureModelPreferencesLocked(dir)
+	if b.service.ModelPreferences()[key].Model != "gpt-6-astra" {
+		t.Fatal("legacy state prevented saving new chat preference")
+	}
+}
 
 func TestModelCommandAutomaticallyPersistsPreference(t *testing.T) {
 	dir := t.TempDir()
@@ -24,7 +50,7 @@ func TestModelCommandAutomaticallyPersistsPreference(t *testing.T) {
 		a.HandleAction(context.Background(), control.Action{Kind: control.ActionModelCommand, GatewayID: "app-1", SurfaceSessionID: "surface-1", ChatID: "chat-1", ActorUserID: "user-1", Text: command})
 		b := &App{service: orchestrator.NewService(time.Now, orchestrator.Config{}, nil)}
 		b.configureModelPreferencesLocked(dir)
-		key := state.WorkspaceDefaultsStorageKey("/workspace/project", state.CodexInstanceBackendContract(""))
+		key := state.ChatModelPreferenceKey("app-1", "chat-1", "")
 		got := b.service.ModelPreferences()[key]
 		if command == "/model clear" {
 			if got != (state.ModelConfigRecord{}) {
@@ -38,7 +64,7 @@ func TestModelCommandAutomaticallyPersistsPreference(t *testing.T) {
 
 func TestModelPreferencesSurviveRestartAndClear(t *testing.T) {
 	dir := t.TempDir()
-	key := state.WorkspaceDefaultsStorageKey("/workspace/project", state.CodexInstanceBackendContract(""))
+	key := state.ChatModelPreferenceKey("app-1", "chat-1", "")
 	entry := state.ModelConfigRecord{Model: "gpt-6-astra", ReasoningEffort: "medium"}
 	path := filepath.Join(dir, "model-preferences.json")
 	if err := saveModelPreferences(path, map[string]state.ModelConfigRecord{key: entry}); err != nil {

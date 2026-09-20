@@ -162,6 +162,7 @@ type Root struct {
 	Instances                       map[string]*InstanceRecord
 	Surfaces                        map[string]*SurfaceConsoleRecord
 	WorkspaceDefaults               map[string]ModelConfigRecord
+	ChatModelPreferences            map[string]ModelConfigRecord
 	CodexProviders                  map[string]CodexProviderRecord
 	ClaudeProfiles                  map[string]ClaudeProfileRecord
 	ClaudeWorkspaceProfileSnapshots map[string]ClaudeWorkspaceProfileSnapshotRecord
@@ -672,6 +673,7 @@ func NewRoot() *Root {
 		Instances:                       map[string]*InstanceRecord{},
 		Surfaces:                        map[string]*SurfaceConsoleRecord{},
 		WorkspaceDefaults:               map[string]ModelConfigRecord{},
+		ChatModelPreferences:            map[string]ModelConfigRecord{},
 		CodexProviders:                  map[string]CodexProviderRecord{},
 		ClaudeProfiles:                  map[string]ClaudeProfileRecord{},
 		ClaudeWorkspaceProfileSnapshots: map[string]ClaudeWorkspaceProfileSnapshotRecord{},

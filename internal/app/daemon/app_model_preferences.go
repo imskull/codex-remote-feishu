@@ -37,11 +37,14 @@ func (a *App) configureModelPreferencesLocked(stateDir string) {
 			log.Printf("load model preferences failed: %v", err)
 			return
 		}
-		if stored.Version != 1 {
+		if stored.Version != 1 && stored.Version != 2 {
 			log.Printf("unsupported model preferences version: %d", stored.Version)
 			return
 		}
-		a.service.MaterializeModelPreferences(stored.Entries)
+		// Version 1 had no chat identity, so it cannot safely be assigned to a chat.
+		if stored.Version == 2 {
+			a.service.MaterializeModelPreferences(stored.Entries)
+		}
 	}
 	a.modelPreferences = modelPreferencesRuntimeState{path: path, saved: a.service.ModelPreferences()}
 }
@@ -62,7 +65,7 @@ func (a *App) syncModelPreferencesLocked() {
 }
 
 func saveModelPreferences(path string, entries map[string]state.ModelConfigRecord) error {
-	raw, err := json.MarshalIndent(modelPreferencesFile{Version: 1, Entries: entries}, "", "  ")
+	raw, err := json.MarshalIndent(modelPreferencesFile{Version: 2, Entries: entries}, "", "  ")
 	if err != nil {
 		return err
 	}

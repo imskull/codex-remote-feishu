@@ -7,6 +7,7 @@ import (
 )
 
 var commonFeishuModelValues = []string{
+	"gpt-6.1-sol medium",
 	"gpt-6-astra medium",
 	"gpt-5.6-sol medium",
 	"gpt-5.6-terra medium",

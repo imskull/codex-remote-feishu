@@ -8,6 +8,16 @@
 - Do not append `Co-Authored-By:` trailers. Preserve original authors and file contents when rewording existing commits.
 - GitHub itself does not require Conventional Commits; this is the repository convention. Rewrite published commits only when explicitly authorized, and publish using an exact expected remote HEAD lease.
 
+## Code-change SOP（代码改动标准流程）
+
+每次代码改动都按以下顺序执行；任务分级决定测试和 guardrail 范围，不免除本流程：
+
+1. 构建并修复错误：运行 `go build ./...`，以及改动所需的 focused tests 和对应 guardrail；提交前运行 `scripts/check/pre-commit.sh`。
+2. 提交改动，遵守本文件的 Conventional Commits 和提交消息校验要求。
+3. 启动子代理审查该提交，核对需求、diff、正确性、回归风险和验证证据。full 高风险 issue 由 `issue-verifier` 承担独立验收，并覆盖该提交审查，避免重复验收。
+4. 修复审查发现的问题，补跑受影响的构建、测试和 pre-commit，再交子代理复审，直到通过。提交尚未推送时使用 `git commit --amend`，不另建修复提交；已推送时创建新提交，不改写已发布历史。每次 amend 前仍须校验提交消息。
+5. 审查通过后，按下方“验证与发布底线”执行 safe-push、本地重建与重启及收尾检查；向用户报告改了什么、为什么改、如何验证，以及审查和发布结果。
+
 ## 会话握手
 
 - 收到直接指令时，先简短复述：用户要求什么、我马上做什么。
@@ -59,7 +69,7 @@
 - `prepare` 按 issue 正文/标签做机械升级；执行者还要按触碰文件面核对（状态机/迁移/安全/权限/协议等 guardrail 区域），命中即升 `full`。
 - 单子全流程由 `.codex/skills/issue-workflow-guardrail/` 唯一负责，不叠加通用 lifecycle skill（brainstorming、writing-plans、executing-plans、subagent-driven-development、requesting-code-review、finishing-a-development-branch、using-git-worktrees）。
 - 方法 skill 照常可用：`systematic-debugging`、`test-driven-development`、`verification-before-completion`；并行 agent 仅在任务真正独立可并行时使用。
-- 持久化只保留一份：需求/决策/执行状态写 issue body，长设计写 docs 生命周期文档，独立验收只由 `issue-verifier` 承担（full 高风险场景），机械检查和发布由 pre-commit + `safe-push` 承担。
+- 持久化只保留一份：需求/决策/执行状态写 issue body，长设计写 docs 生命周期文档，full 高风险场景的独立验收只由 `issue-verifier` 承担并覆盖 Code-change SOP 的提交审查；其余代码改动仍须子代理提交审查。机械检查和发布由 pre-commit + `safe-push` 承担。
 - 用户要求分阶段推进时按连续执行处理：阶段只是顺序不是停止点；每阶段结束只做四问（是否完成 / 硬阻塞 / 产品决策门 / 需要拆分），否则继续下一阶段。
 
 ## 工作区干净
@@ -88,7 +98,7 @@
 - 声明“完成/通过/已修复”前必须有新鲜验证证据；同一提交已证明过的检查不重复跑。
 - 提交前跑 `scripts/check/pre-commit.sh`（含文件长度 gate），不得绕过。
 - 推送一律走 `./safe-push.sh`；rebase 后出现 review gate 时先人工核对再 `--confirm-rebase-review`。
-- 提交后默认同轮推送；除非用户要求本地-only、临时实验分支、或推送被真实阻塞。停止本地状态时明确报告 LOCAL-ONLY、分支、HEAD 和下一步。
+- 提交后须先通过 Code-change SOP 要求的子代理审查，再默认同轮推送；除非用户要求本地-only、临时实验分支、或推送被真实阻塞。停止本地状态时明确报告 LOCAL-ONLY、分支、HEAD 和下一步。
 - 每次成功推送后，自动串行执行本地重建与重启：若本项目 daemon 正在运行，先停止它及其托管子进程，再从当前 checkout 运行 `go build -o .\bin\codex-remote.exe ./cmd/codex-remote`，然后在仓库根目录启动 `.\bin\codex-remote.exe daemon` 并验证健康；使用仓库 `bin` 执行体而非安装目录，保留既有凭据和 fork 更新源，禁止重叠生命周期操作；构建失败时报告错误，不启动旧执行体。
 - 收尾前重查 `git status --short` 和本地 HEAD 是否领先 upstream。
 - 重复 tail-state 检查优先 `scripts/dev/worktree-facts.sh`；路径探测用 `scripts/dev/resolve-repo-path.sh`；陌生 `gh --json` 字段先 `scripts/dev/gh-json-fields.sh`；同一确定性失败不原样重跑。

@@ -474,12 +474,16 @@ var feishuCommandSpecs = []feishuCommandSpec{
 			CanonicalSlash:   "/workspace",
 			CanonicalMenuKey: "workspace",
 			ArgumentKind:     FeishuCommandArgumentNone,
-			Description:      "打开 headless 模式的工作区与会话主页，里面提供切换、从目录新建、从 GIT URL 新建、从 Worktree 新建、解除接管。",
+			Description:      "打开 headless 模式的工作区与会话主页；也可用 /workspace <绝对路径> 直接切换到已有目录并准备新会话。",
+			Examples:         []string{"/workspace d:/stock/stock-agent", "/workspace \"D:/My Projects/agent\""},
 			ShowInHelp:       true,
 			ShowInMenu:       true,
 		},
 		textExact: []feishuCommandMatch{
 			{alias: "/workspace", action: Action{Kind: ActionWorkspaceRoot}},
+		},
+		textPrefixes: []feishuCommandPrefixMatch{
+			{alias: "/workspace", kind: ActionWorkspaceRoot},
 		},
 		menuExact: []feishuCommandMatch{
 			{alias: "workspace", action: Action{Kind: ActionWorkspaceRoot}},

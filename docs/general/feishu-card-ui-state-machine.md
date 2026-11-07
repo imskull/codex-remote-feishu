@@ -1,8 +1,8 @@
 # Feishu 卡片 UI 状态机
 
 > Type: `general`
-> Updated: `2026-08-29`
-> Summary: 补充路径选择器 stale 初始路径会回退到最近存在父目录，不再中断 `/workspace new` 子步骤。
+> Updated: `2026-11-07`
+> Summary: 记录 `/workspace <绝对路径>` 的文本执行入口，保留裸命令父页与既有 callback 边界。
 
 ## 1. 文档定位
 
@@ -451,6 +451,8 @@ MCP request 卡片当前新增的可视语义：
 这个顺序是当前 P2P surface 不被拆裂、且 runtime hot rebuild 后旧卡仍能回到原 surface 的前提之一。
 
 ## 5. 当前同步 Replace 与 Append 边界
+
+文本 `/workspace <绝对路径>` 不命中 bare workspace inline intent，而是进入 orchestrator 的工作区切换执行路径，使用既有 append-only notice / headless 反馈，不创建新的 picker owner 或 callback payload。裸 `/workspace` 和既有 workspace 子命令继续使用原卡片导航契约；切换成功清理旧 picker，非法路径或 busy 拒绝不替换原卡。path picker 或 processing picker 正在阻塞时继续提示先确认/取消，不绕过原 gate。
 
 ### 5.1 同步 replace 的必要条件
 

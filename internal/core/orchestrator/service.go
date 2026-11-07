@@ -387,6 +387,8 @@ func (s *Service) ApplySurfaceAction(action control.Action) []eventcontract.Even
 	}
 	var events []eventcontract.Event
 	switch action.Kind {
+	case control.ActionWorkspaceRoot:
+		events = s.switchWorkspacePath(surface, action.Text)
 	case control.ActionListInstances:
 		if s.surfaceIsHeadless(surface) {
 			events = s.openTargetPickerForAction(surface, action, "", nil, "", false)

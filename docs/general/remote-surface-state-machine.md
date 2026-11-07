@@ -1,8 +1,8 @@
 # Remote Surface 核心状态机
 
 > Type: `general`
-> Updated: `2026-10-01`
-> Summary: 补充 Feishu 群聊纯 @ 主机器人快捷切换，以及 `/workspace new` 路径子步骤对已删除当前目录的回退规则。
+> Updated: `2026-11-07`
+> Summary: 增加 Lark `/workspace <绝对路径>` 直接切换已有工作区目录的入口与阻塞规则。
 > 1. visible 但 contract mismatch 的 workspace/session 仍然可见，不会再被 `/list`、`/use`、workspace recency、target picker 直接吞掉；
 > 2. 这些 mismatch 候选不会再假装“可直接接管”；
 > 3. detached `/use`、headless exact-thread restore、workspace attach、startup resume、`/mode` backend switch、`/claudeprofile`、`/codexprofile`、`/opencodeprofile` 现在都会统一先判定 `attach visible compatible / reuse managed compatible / restart managed incompatible / fresh-start matching headless / reject`，而不是各自维护平行 continuation；
@@ -1788,6 +1788,10 @@ transport degraded retained attachment
 ## 6. 命令矩阵
 
 ### 6.1 基础路由态
+
+Lark 文本命令 `/workspace <绝对路径>`（例如 `/workspace d:/stock/stock-agent`）直接接入已有目录，支持带空格的路径与成对单/双引号。路径在 daemon 所在机器解析并解析 symlink；不存在、非目录或非绝对路径拒绝，不创建目录，也不改变原路由。裸 `/workspace` 仍打开父页，`list/new/detach` 等完整子命令优先按原命令解释。
+
+该入口仅用于 headless backend，复用 workspace contract resolution：兼容实例直接接管；不兼容 managed 实例按当前合同重启；没有实例则启动 managed headless，成功后进入 `R5 NewThreadReady`。当前已接管同一工作区时只提示，不清空所选会话。切换前检查当前运行/排队/overlay 阻塞、目标 workspace claim 和群 room workspace 权限；拒绝时不发目标 runtime kill/start。执行成功会清理旧 picker，pending launch 继续复用既有超时、失败和 `/detach` 恢复路径；`vscode` 模式拒绝并提示切回 headless。
 
 除单元格显式写 `vscode` 外，`headless` 路径当前包含 `codex` / `claude` / `opencode` 三个 backend；OpenCode 在 workspace/session 壳上与 headless 主链一致，差异由 4.1.2 的 command profile 与 admission 规则约束。
 

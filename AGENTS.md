@@ -81,6 +81,7 @@
 - 提交前跑 `scripts/check/pre-commit.sh`（含文件长度 gate），不得绕过。
 - 推送一律走 `./safe-push.sh`；rebase 后出现 review gate 时先人工核对再 `--confirm-rebase-review`。
 - 提交后默认同轮推送；除非用户要求本地-only、临时实验分支、或推送被真实阻塞。停止本地状态时明确报告 LOCAL-ONLY、分支、HEAD 和下一步。
+- 每次成功推送后，自动串行执行本地重建与重启：若本项目 daemon 正在运行，先停止它及其托管子进程，再从当前 checkout 运行 `go build -o .\bin\codex-remote.exe ./cmd/codex-remote`，然后在仓库根目录启动 `.\bin\codex-remote.exe daemon` 并验证健康；使用仓库 `bin` 执行体而非安装目录，保留既有凭据和 fork 更新源，禁止重叠生命周期操作；构建失败时报告错误，不启动旧执行体。
 - 收尾前重查 `git status --short` 和本地 HEAD 是否领先 upstream。
 - 重复 tail-state 检查优先 `scripts/dev/worktree-facts.sh`；路径探测用 `scripts/dev/resolve-repo-path.sh`；陌生 `gh --json` 字段先 `scripts/dev/gh-json-fields.sh`；同一确定性失败不原样重跑。
 - 工具输出约定：`issuectl` / `issue-doc-sync` 默认只把摘要打到 stdout；完整 issue/评论/JSON 写文件（`--json-file`、`--snapshot-file`、inspect 默认输出文件）。按需读取时先 `rg '^## '` 列结构，再 `sed -n '/^## 目标/,/^## 完成标准/p'` 取需要的 section，禁止 cat 全文。

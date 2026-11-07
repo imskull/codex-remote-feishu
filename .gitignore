@@ -19,3 +19,5 @@ web/.vite/
 .codex/state/issue-doc-sync/cache/**
 
 .codex/tmp/
+/.mcp.json
+/CLAUDE.local.md

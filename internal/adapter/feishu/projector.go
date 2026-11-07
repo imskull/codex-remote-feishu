@@ -112,17 +112,30 @@ func (p *Projector) projectEventBase(chatID string, event eventcontract.Event) [
 	switch payload := event.CanonicalPayload().(type) {
 	case eventcontract.SnapshotPayload:
 		elements := p.projectSnapshotElements(payload.Snapshot)
+		if side := payload.Snapshot.SideSession; side != nil {
+			elements = append(elements, sideQuitElement(side.SessionID, event.DaemonLifecycleID, event.SurfaceSessionID))
+		}
 		return []Operation{newEventCardOperation(chatID, event, eventCardOperationSpec{
 			Title:    "当前状态",
 			ThemeKey: cardThemeInfo,
 			Elements: elements,
 		})}
 	case eventcontract.NoticePayload:
+		if payload.Notice.Code == "side_session_reply" && payload.Notice.SideSessionID != "" {
+			return projectSideReply(chatID, event, payload.Notice)
+		}
 		title := strings.TrimSpace(payload.Notice.Title)
 		if title == "" {
 			title = "系统提示"
 		}
 		body, elements := projectorpkg.ProjectNoticeContent(payload.Notice)
+		if payload.Notice.SideSessionID != "" {
+			if len(elements) == 0 && body != "" {
+				elements = []map[string]any{{"tag": "markdown", "content": body}}
+				body = ""
+			}
+			elements = append(elements, sideQuitElement(payload.Notice.SideSessionID, event.DaemonLifecycleID, event.SurfaceSessionID))
+		}
 		theme := noticeThemeKey(payload.Notice)
 		return []Operation{newEventCardOperation(chatID, event, eventCardOperationSpec{
 			Title:                 title,

@@ -316,12 +316,19 @@ func (s *Service) SetPrimaryBotPermissionChecker(checker PrimaryBotPermissionChe
 
 func (s *Service) ApplySurfaceAction(action control.Action) []eventcontract.Event {
 	surface := s.ensureSurface(action)
+	if surface.SideSessionEnded {
+		surface.SideSessionEnded = false
+		return append(notice(surface, "side_session_ended", "The temporary side session ended when the daemon restarted. Input returns to the original conversation."), s.ApplySurfaceAction(action)...)
+	}
 	if blocked := s.rejectInvalidBotCapabilitySettings(surface, action); blocked != nil {
 		return s.filterEventsForSurfaceVisibility(blocked)
 	}
 	action = s.resolveCatalogActionFromSurfaceContext(surface, action)
 	if blocked := s.rejectExpiredCommandEntry(surface, action); blocked != nil {
 		return s.filterEventsForSurfaceVisibility(blocked)
+	}
+	if events, handled := s.routeSideAction(surface, action); handled {
+		return s.filterEventsForSurfaceVisibility(events)
 	}
 	s.pruneExpiredPathPicker(surface)
 	if surface.Abandoning {
@@ -539,6 +546,9 @@ func (s *Service) ApplySurfaceAction(action control.Action) []eventcontract.Even
 }
 
 func (s *Service) ApplyAgentEvent(instanceID string, event agentproto.Event) []eventcontract.Event {
+	if event.SideSessionID != "" {
+		return s.filterEventsForSurfaceVisibility(s.applySideEvent(instanceID, event))
+	}
 	inst := s.root.Instances[instanceID]
 	if inst == nil {
 		return nil

@@ -64,8 +64,9 @@ func (s *Service) autoDispatchUnsupportedServerRequest(surface *state.SurfaceCon
 		Kind:             eventcontract.KindAgentCommand,
 		SurfaceSessionID: surface.SurfaceSessionID,
 		Command: &agentproto.Command{
-			CommandID: commandID,
-			Kind:      agentproto.CommandRequestRespond,
+			SideSessionID: request.SideSessionID,
+			CommandID:     commandID,
+			Kind:          agentproto.CommandRequestRespond,
 			Origin: agentproto.Origin{
 				Surface: surface.SurfaceSessionID,
 				UserID:  surface.ActorUserID,

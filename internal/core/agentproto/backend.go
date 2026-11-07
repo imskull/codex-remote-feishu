@@ -80,6 +80,7 @@ func DefaultCapabilitiesForBackend(backend Backend) Capabilities {
 
 func EffectiveCapabilitiesForBackend(backend Backend, caps Capabilities) Capabilities {
 	base := DefaultCapabilitiesForBackend(backend)
+	base.SideSession = caps.SideSession // Never infer support for older wrappers.
 	if caps.ThreadsRefresh {
 		base.ThreadsRefresh = true
 	}

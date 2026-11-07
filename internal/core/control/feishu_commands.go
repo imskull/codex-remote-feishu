@@ -19,6 +19,7 @@ const (
 	FeishuCommandPrimary              = "primary"
 	FeishuCommandCoworkers            = "coworkers"
 	FeishuCommandReview               = "review"
+	FeishuCommandSide                 = "side"
 	FeishuCommandSendFile             = "sendfile"
 	FeishuCommandFollow               = "follow"
 	FeishuCommandDetach               = "detach"
@@ -225,6 +226,7 @@ var feishuCommandSpecs = []feishuCommandSpec{
 	feishuPrimaryCommandSpec,
 	feishuCoworkersCommandSpec,
 	reviewCommandSpec(),
+	sideCommandSpec(),
 	sendFileCommandSpec(),
 	{
 		definition: FeishuCommandDefinition{

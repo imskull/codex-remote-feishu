@@ -23,6 +23,9 @@ func projectSnapshotElements(snapshot control.Snapshot, daemonBinary, currentDir
 
 func snapshotSections(snapshot control.Snapshot, daemonBinary, currentDirectory string, worktree *gitWorktreeSummary) []control.FeishuCardTextSection {
 	lines := []string{snapshotLine("当前模式", displaySnapshotMode(snapshot.ProductMode, snapshot.Backend))}
+	if side := snapshot.SideSession; side != nil {
+		lines = append(lines, snapshotLine("Side mode", side.Status), snapshotLine("退出旁支会话", "/side quit"))
+	}
 	if profile := formatSnapshotClaudeProfile(snapshot); profile != "" {
 		lines = append(lines, snapshotLine("Claude 配置", profile))
 	}

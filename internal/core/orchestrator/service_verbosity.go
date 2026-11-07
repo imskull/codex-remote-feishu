@@ -54,6 +54,16 @@ func (s *Service) filterEventsForSurfaceVisibility(events []eventcontract.Event)
 	}
 	filtered := make([]eventcontract.Event, 0, len(events))
 	for _, event := range events {
+		if command := event.Command; command != nil && command.SideSessionID == "" {
+			if surface := s.root.Surfaces[event.SurfaceSessionID]; surface != nil {
+				if request := surface.PendingRequests[command.Request.RequestID]; request != nil {
+					command.SideSessionID = request.SideSessionID
+				}
+				if side := surface.SideSession; side != nil && side.ThreadID != "" && command.Target.ThreadID == side.ThreadID {
+					command.SideSessionID = side.SessionID
+				}
+			}
+		}
 		if s.allowSurfaceVisibleEvent(event) {
 			filtered = append(filtered, event)
 		}

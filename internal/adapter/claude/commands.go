@@ -67,6 +67,12 @@ func (t *Translator) translatePromptSend(command agentproto.Command) ([][]byte, 
 	t.pendingTurns = append(t.pendingTurns, turn)
 
 	outbound := make([][]byte, 0, 2)
+	// A side child inherits the exact native permission mode at fork. Projecting
+	// modes such as acceptEdits back through the common access enum loses detail.
+	if command.SideSessionID != "" && command.Overrides.AccessMode == "" && command.Overrides.PlanMode == "" {
+		outbound = append(outbound, frame)
+		return outbound, nil
+	}
 	if frame, ok, err := t.buildPermissionModeFrame(command.CommandID, command.Overrides.AccessMode, command.Overrides.PlanMode); err != nil {
 		return nil, err
 	} else if ok {

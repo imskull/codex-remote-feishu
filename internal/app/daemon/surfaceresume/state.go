@@ -18,6 +18,7 @@ const (
 )
 
 type Entry struct {
+	SideSessionActive           bool                        `json:"sideSessionActive,omitempty"`
 	SurfaceSessionID            string                      `json:"surfaceSessionID"`
 	GatewayID                   string                      `json:"gatewayID,omitempty"`
 	ChatID                      string                      `json:"chatID,omitempty"`
@@ -199,7 +200,8 @@ func NormalizeEntry(entry Entry) (Entry, bool) {
 }
 
 func SameEntryContent(left, right Entry) bool {
-	return strings.TrimSpace(left.SurfaceSessionID) == strings.TrimSpace(right.SurfaceSessionID) &&
+	return left.SideSessionActive == right.SideSessionActive &&
+		strings.TrimSpace(left.SurfaceSessionID) == strings.TrimSpace(right.SurfaceSessionID) &&
 		strings.TrimSpace(left.GatewayID) == strings.TrimSpace(right.GatewayID) &&
 		strings.TrimSpace(left.ChatID) == strings.TrimSpace(right.ChatID) &&
 		strings.TrimSpace(left.ActorUserID) == strings.TrimSpace(right.ActorUserID) &&

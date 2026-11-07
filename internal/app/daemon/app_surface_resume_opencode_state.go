@@ -91,6 +91,11 @@ func (a *App) materializeSurfaceResumeEntryLocked(entry surfaceresume.Entry) {
 		state.PlanModeSetting(entry.PlanMode),
 		entry.PlanModeOverrideSet,
 	)
+	if entry.SideSessionActive {
+		if surface := a.service.Surface(entry.SurfaceSessionID); surface != nil {
+			surface.SideSessionEnded = true
+		}
+	}
 }
 
 // seedSurfaceSessionSettingsFromBotRecordsLocked 把旧版机器人级 access/plan

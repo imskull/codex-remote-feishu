@@ -230,6 +230,7 @@ func (a *App) currentSurfaceResumeEntryLocked(surface *state.SurfaceConsoleRecor
 		return surfaceresume.Entry{}, false
 	}
 	entry := surfaceresume.Entry{
+		SideSessionActive:    surface.SideSession != nil || surface.SideSessionEnded,
 		SurfaceSessionID:     strings.TrimSpace(surface.SurfaceSessionID),
 		GatewayID:            strings.TrimSpace(surface.GatewayID),
 		ChatID:               strings.TrimSpace(surface.ChatID),

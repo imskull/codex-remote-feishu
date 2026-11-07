@@ -26,6 +26,9 @@ func (s *Service) buildSnapshot(surface *state.SurfaceConsoleRecord) *control.Sn
 		snapshot.ClaudeProfileName = s.claudeProfileDisplayName(snapshot.ClaudeProfileID)
 	}
 	snapshot.Gate = s.snapshotGateSummary(surface)
+	if side := surface.SideSession; side != nil {
+		snapshot.SideSession = &control.SideSessionSummary{SessionID: side.SessionID, Status: side.Status, ThreadID: side.ThreadID, Queued: len(side.Queue)}
+	}
 	if pending := surface.PendingHeadless; pending != nil {
 		snapshot.PendingHeadless = control.PendingHeadlessSummary{
 			InstanceID:            pending.InstanceID,

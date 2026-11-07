@@ -384,7 +384,23 @@ func pendingRequestIsActive(surface *state.SurfaceConsoleRecord, requestID strin
 	if requestID == "" {
 		return false
 	}
-	return activePendingRequestID(surface) == requestID
+	request := pendingRequestRecord(surface, requestID)
+	return request != nil && activePendingRequestInLane(surface, request.SideSessionID) == request
+}
+
+// Main and side execution can independently wait for an approval. Requests
+// retain FIFO ordering within their execution session.
+func activePendingRequestInLane(surface *state.SurfaceConsoleRecord, sessionID string) *state.RequestPromptRecord {
+	if surface == nil {
+		return nil
+	}
+	ensurePendingRequestOrder(surface)
+	for _, id := range surface.PendingRequestOrder {
+		if request := pendingRequestRecord(surface, id); request != nil && request.SideSessionID == sessionID {
+			return request
+		}
+	}
+	return nil
 }
 
 func requestCaptureExpired(now time.Time, capture *state.RequestCaptureRecord) bool {
@@ -858,16 +874,16 @@ type RequestDeliveryReport struct {
 }
 
 func (s *Service) activePendingRequestNeedingVisibility(surface *state.SurfaceConsoleRecord) *state.RequestPromptRecord {
-	request := activePendingRequest(surface)
-	if request == nil {
-		return nil
+	if surface != nil {
+		ensurePendingRequestOrder(surface)
+		for _, id := range surface.PendingRequestOrder {
+			request := pendingRequestRecord(surface, id)
+			if request != nil && pendingRequestIsActive(surface, id) && requestNeedsVisibleRefresh(request) {
+				return request
+			}
+		}
 	}
-	switch normalizeRequestVisibilityState(request.VisibilityState) {
-	case requestVisibilityPendingVisibility, requestVisibilityDeliveryDegraded:
-		return request
-	default:
-		return nil
-	}
+	return nil
 }
 
 func requestNeedsVisibleRefresh(request *state.RequestPromptRecord) bool {

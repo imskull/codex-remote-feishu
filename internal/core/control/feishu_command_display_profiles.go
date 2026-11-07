@@ -44,6 +44,7 @@ type FeishuCommandSupport struct {
 var feishuCommandDisplayProfiles = map[string]FeishuCommandDisplayProfile{
 	"codex": newFeishuCommandDisplayProfile("codex", true,
 		commandSupportVisible(FeishuCommandStop),
+		commandSupportVisible(FeishuCommandSide),
 		commandSupportVisible(FeishuCommandCompact),
 		commandSupportVisible(FeishuCommandSteerAll),
 		commandSupportVisibleWithStages(FeishuCommandNew, FeishuCommandMenuStageNormalWorking),
@@ -83,6 +84,7 @@ var feishuCommandDisplayProfiles = map[string]FeishuCommandDisplayProfile{
 	),
 	"claude": newFeishuCommandDisplayProfile("claude", false,
 		commandSupportVisible(FeishuCommandStop),
+		commandSupportVisible(FeishuCommandSide),
 		commandSupportVisibleAs(FeishuCommandNew, FeishuCommandSupportApproximation, "Claude 会话切换沿用现有产品壳，但底层走 backend-aware session catalog 与 route contract。"),
 		commandSupportVisible(FeishuCommandStatus),
 		commandSupportVisible(FeishuCommandReasoning),
@@ -128,6 +130,7 @@ var feishuCommandDisplayProfiles = map[string]FeishuCommandDisplayProfile{
 	"opencode": newOpenCodeFeishuCommandDisplayProfile(),
 	"vscode": newFeishuCommandDisplayProfile("vscode", true,
 		commandSupportVisible(FeishuCommandStop),
+		commandSupportVisible(FeishuCommandSide),
 		commandSupportVisible(FeishuCommandCompact),
 		commandSupportVisible(FeishuCommandSteerAll),
 		commandSupportVisible(FeishuCommandStatus),
@@ -170,6 +173,7 @@ const (
 
 func newOpenCodeFeishuCommandDisplayProfile() FeishuCommandDisplayProfile {
 	profile := newFeishuCommandDisplayProfile("opencode", false,
+		commandSupportHiddenReject(FeishuCommandSide, FeishuCommandSupportReject, opencodeDefaultRejectNote),
 		commandSupportVisible(FeishuCommandStop),
 		commandSupportHiddenReject(FeishuCommandCompact, FeishuCommandSupportReject, opencodeDefaultRejectNote),
 		commandSupportHiddenReject(FeishuCommandSteerAll, FeishuCommandSupportReject, opencodeSteerRejectNote),

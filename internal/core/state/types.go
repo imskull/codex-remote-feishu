@@ -310,6 +310,8 @@ type ThreadReplayRecord struct {
 }
 
 type SurfaceConsoleRecord struct {
+	SideSession      *SideSessionRecord `json:"-"`
+	SideSessionEnded bool               `json:"-"`
 	SurfaceSessionID string
 	Platform         string
 	GatewayID        string
@@ -734,6 +736,7 @@ func (s RequestPromptTextSectionRecord) Normalized() RequestPromptTextSectionRec
 }
 
 type RequestPromptRecord struct {
+	SideSessionID            string
 	RequestID                string
 	RequestType              string
 	SemanticKind             string

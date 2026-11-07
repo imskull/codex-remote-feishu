@@ -275,7 +275,14 @@ func (r *codexBackendRuntime) Backend() agentproto.Backend {
 func (r *codexBackendRuntime) Capabilities() agentproto.Capabilities {
 	capabilities := agentproto.DefaultCapabilitiesForBackend(agentproto.BackendCodex)
 	capabilities.ModelCatalog = true
+	capabilities.SideSession = true
 	return capabilities
+}
+
+func (r *codexBackendRuntime) DisconnectSideSessions() [][]byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.translator.DisconnectSideSessions()
 }
 
 func (r *codexBackendRuntime) Launch(ctx context.Context, app *App, rawLogger *debuglog.RawLogger, reportProblem func(agentproto.ErrorInfo)) (*childSession, error) {
@@ -400,10 +407,13 @@ type claudeBackendRuntime struct {
 }
 
 type claudeLaunchResumeTarget struct {
-	ThreadID      string
-	CWD           string
-	ForkEphemeral bool
-	ReviewerAgent string
+	SideThreadID   string
+	Model          string
+	PermissionMode string
+	ThreadID       string
+	CWD            string
+	ForkEphemeral  bool
+	ReviewerAgent  string
 }
 
 func (r *claudeBackendRuntime) Backend() agentproto.Backend {
@@ -411,7 +421,9 @@ func (r *claudeBackendRuntime) Backend() agentproto.Backend {
 }
 
 func (r *claudeBackendRuntime) Capabilities() agentproto.Capabilities {
-	return agentproto.DefaultCapabilitiesForBackend(agentproto.BackendClaude)
+	caps := agentproto.DefaultCapabilitiesForBackend(agentproto.BackendClaude)
+	caps.SideSession = true
+	return caps
 }
 
 func (r *claudeBackendRuntime) Launch(ctx context.Context, app *App, rawLogger *debuglog.RawLogger, reportProblem func(agentproto.ErrorInfo)) (*childSession, error) {

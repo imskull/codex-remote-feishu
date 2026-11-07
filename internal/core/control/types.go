@@ -31,6 +31,8 @@ const (
 	ActionPrimaryCommand              ActionKind = "surface.command.primary"
 	ActionCoworkersCommand            ActionKind = "surface.command.coworkers"
 	ActionReviewCommand               ActionKind = "surface.command.review"
+	ActionSideCommand                 ActionKind = "surface.command.side"
+	ActionSideQuit                    ActionKind = "surface.button.side_quit"
 	ActionDebugCommand                ActionKind = "surface.command.debug"
 	ActionCronCommand                 ActionKind = "surface.command.cron"
 	ActionMCPOAuthCommand             ActionKind = "surface.command.mcp_oauth"
@@ -130,6 +132,7 @@ type ActionFileAttachment struct {
 }
 
 type Action struct {
+	SideSessionID       string
 	Kind                ActionKind
 	GatewayID           string
 	SurfaceSessionID    string
@@ -198,6 +201,7 @@ type SelectionOption struct {
 }
 
 type Snapshot struct {
+	SideSession       *SideSessionSummary
 	SurfaceSessionID  string
 	ActorUserID       string
 	ProductMode       string
@@ -375,6 +379,7 @@ type PendingInputState struct {
 }
 
 type Notice struct {
+	SideSessionID         string
 	Code                  string
 	Title                 string
 	TemporarySessionLabel string

@@ -128,6 +128,7 @@ func buildFeishuCommandBindings() map[string]FeishuCommandBinding {
 		FeishuCommandCompact,
 		FeishuCommandSteerAll,
 		FeishuCommandReview,
+		FeishuCommandSide,
 		FeishuCommandPatch,
 	} {
 		bindings[familyID] = FeishuCommandBinding{

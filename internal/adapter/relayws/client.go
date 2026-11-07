@@ -18,10 +18,11 @@ import (
 )
 
 type ClientCallbacks struct {
-	OnCommand func(context.Context, agentproto.Command) error
-	OnWelcome func(context.Context, agentproto.Welcome) error
-	OnConnect func(context.Context) error
-	OnError   func(context.Context, agentproto.ErrorInfo) error
+	OnDisconnect func()
+	OnCommand    func(context.Context, agentproto.Command) error
+	OnWelcome    func(context.Context, agentproto.Welcome) error
+	OnConnect    func(context.Context) error
+	OnError      func(context.Context, agentproto.ErrorInfo) error
 }
 
 type relayConn interface {
@@ -253,6 +254,9 @@ func (c *Client) RunOnce(ctx context.Context) error {
 			c.conn = nil
 		}
 		c.mu.Unlock()
+		if c.callbacks.OnDisconnect != nil {
+			c.callbacks.OnDisconnect()
+		}
 	}()
 
 	helloBytes, err := agentproto.MarshalEnvelope(agentproto.Envelope{

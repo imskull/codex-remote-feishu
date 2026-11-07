@@ -2,7 +2,7 @@
 
 > Type: `general`
 > Updated: `2026-11-07`
-> Summary: 增加 Lark `/workspace <绝对路径>` 直接切换已有工作区目录的入口与阻塞规则。
+> Summary: 增加 Codex/Claude 持续 Side mode overlay、独立队列与退出后的原会话路由恢复边界。
 > 1. visible 但 contract mismatch 的 workspace/session 仍然可见，不会再被 `/list`、`/use`、workspace recency、target picker 直接吞掉；
 > 2. 这些 mismatch 候选不会再假装“可直接接管”；
 > 3. detached `/use`、headless exact-thread restore、workspace attach、startup resume、`/mode` backend switch、`/claudeprofile`、`/codexprofile`、`/opencodeprofile` 现在都会统一先判定 `attach visible compatible / reuse managed compatible / restart managed incompatible / fresh-start matching headless / reject`，而不是各自维护平行 continuation；
@@ -2074,7 +2074,24 @@ retained-offline overlay 额外规则：
 
 2026-08-15 #896 review 修复补充：确认卡/编辑表单打开时在服务端暂存当前 thread 的 Goal fingerprint（createdAt/objective/budget），执行 `clear --confirm` / `new|edit` 前先与最新 thread Goal 比对，漂移则取消操作并出错误卡，避免外部 mutation 窗口内的误清/误改；goal 命令 dispatch 失败会清理 pending `goalUserCommands` 并回错误卡，不再静默丢弃；卡片入口触发的 loading 与结果卡通过 `MessageID + Patchable` 在同一 message 上 patch，不残留无按钮死卡；错误卡复用 config 命令 builder（非 sealed），失败原因不伪装成 no-goal 状态。
 
-## 11. 待讨论取舍
+## 11. Persistent Side mode overlay
+
+Each surface may own one runtime-only `SideSessionRecord`. It records the session identity, parent instance/thread, fork thread, lifecycle, active command/turn, opening time and independent side queue. It does not replace `SelectedThreadID`, parent route mode, parent active queue item or main execution ownership. Main work continues while side input runs.
+
+- `/side` opens an empty side session; `/side <message>` also queues the first side message. Entry requires a selected connected Codex/Claude conversation, explicit wrapper `SideSession` capability and no competing exclusive overlay.
+- Opening waits for a matching `side.session.updated` outcome before dispatch. Plain follow-ups stay in the same side history. Repeated `/side` reports that session; repeated `/side <message>` adds another side message without nesting.
+- Side queue dispatch and turn completion use explicit session/command/thread/turn IDs. Side events are handled before ordinary parent event projection and do not drain the main queue. Request cards retain explicit identities; approval FIFO is scoped by `SideSessionID` (empty means main), so a main approval cannot block the active side approval or the reverse. Main approvals and results remain usable.
+- `/stop` while side mode is active interrupts side execution only. `/side quit` interrupts/closes side work, discards its pending messages, clears routing and returns subsequent input to the unchanged parent selection. Repeated quit is harmless. Re-entry creates a fresh fork, and side history never merges into the parent.
+- Switching thread, backend or workspace requires quitting first. Detach closes side mode before normal detach. Close commands carry explicit `Target.InstanceID` so execution cleanup remains routed to the original wrapper after the surface attachment is removed. Existing room coordination still governs other surfaces; side activity cannot make the parent surface appear idle to them.
+- Automatic follow-focus reevaluation and headless contract reconciliation are deferred while the side overlay exists. Parent focus/config refresh cannot silently retarget the selected parent or restart either execution runtime during Side mode; normal reconciliation resumes after the overlay closes.
+- Creation failure, startup timeout or wrapper disconnect clears the overlay and reports termination. Cleanup is bounded, and late events for an ended identity cannot recreate the overlay or deliver queued input into the parent.
+- The record and queue are excluded from durable surface routing. Only the `sideSessionActive` boolean in `surface-resume-state.json` is persisted, without side identity, fork target or queued input. On restart it materializes `SideSessionEnded`, which reports that the temporary session ended on the next inbound action, then clears the marker; recovery never silently replays those messages into the parent.
+
+The fork inherits context available when it is created, excluding unfinished streamed output. Later parent updates are not continuously copied. Model, configuration, workspace and ordinary tool permissions carry over; Codex inheritance uses the exact parent contract and fails closed if its effective permissions cannot be resolved, without consulting global or unrelated-thread templates. Files changed in the side session remain changed after quitting.
+
+Dead-state audit requirements: opening must have timeout/quit escape paths; a late open after quit must be closed; main completion cannot consume side input; stale side approvals cannot retarget the parent; an old quit card cannot close a replacement session. `/status` and side response cards identify `Side mode` and expose the quit command/action.
+
+## 待讨论取舍
 
 1. 群聊 on-demand 恢复遇到 terminal 失败后，同一恢复目标下的后续普通文本会被静默吞掉（不重复发失败卡），直到恢复目标变化、恢复成功或用户显式重选（`/list`、`/use`、`/new`）。这是为了避免刷屏的有意取舍；风险是用户可能误以为机器人无响应，需要错误卡上的指引文案足够明确。
 2. 群聊/其他 surface 在 bot 级 Profile 切换时若正在执行 turn，切换不会立即生效：surface 标记待收敛，直到下一次交互（实例空闲）才重启实例。这是为避免硬杀进行中任务的有意取舍；若用户希望立即生效，可等待当前任务完成或手动 `/detach` 后重连。

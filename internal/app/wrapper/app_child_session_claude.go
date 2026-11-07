@@ -85,6 +85,15 @@ func (a *App) buildClaudeChildLaunch(resume *claudeLaunchResumeTarget) ([]string
 	if resume != nil && resume.ForkEphemeral {
 		args = append(args, "--fork-session")
 	}
+	if resume != nil && resume.SideThreadID != "" {
+		args = append(args, "--session-id", resume.SideThreadID)
+		if resume.Model != "" {
+			args = append(args, "--model", resume.Model)
+		}
+		if resume.PermissionMode != "" {
+			args = append(args, "--permission-mode", resume.PermissionMode)
+		}
+	}
 	if resume != nil && strings.TrimSpace(resume.ReviewerAgent) != "" {
 		agents, _ := json.Marshal(map[string]any{
 			strings.TrimSpace(resume.ReviewerAgent): map[string]any{

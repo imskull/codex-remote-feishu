@@ -11,6 +11,9 @@ import (
 )
 
 func (t *Translator) TranslateCommand(command agentproto.Command) ([][]byte, error) {
+	if command.Kind == agentproto.CommandSideSessionOpen || command.Kind == agentproto.CommandSideSessionClose || command.SideSessionID != "" {
+		return t.translateSideCommand(command)
+	}
 	switch command.Kind {
 	case agentproto.CommandPromptSend:
 		return t.translatePromptSend(command)

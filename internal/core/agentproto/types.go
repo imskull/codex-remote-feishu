@@ -35,6 +35,7 @@ const (
 type EventKind string
 
 const (
+	EventSideSessionUpdated              EventKind = "side.session.updated"
 	EventThreadsSnapshot                 EventKind = "threads.snapshot"
 	EventThreadHistoryRead               EventKind = "thread.history.read"
 	EventThreadDiscovered                EventKind = "thread.discovered"
@@ -94,6 +95,7 @@ type FileChangeRecord struct {
 }
 
 type Event struct {
+	SideSessionID        string                        `json:"sideSessionId,omitempty"`
 	Seq                  uint64                        `json:"seq,omitempty"`
 	Kind                 EventKind                     `json:"kind"`
 	CommandID            string                        `json:"commandId,omitempty"`
@@ -199,6 +201,8 @@ type ThreadHistoryItemRecord struct {
 type CommandKind string
 
 const (
+	CommandSideSessionOpen     CommandKind = "side.session.open"
+	CommandSideSessionClose    CommandKind = "side.session.close"
 	CommandPromptSend          CommandKind = "prompt.send"
 	CommandReviewStart         CommandKind = "review.start"
 	CommandThreadCompactStart  CommandKind = "thread.compact.start"
@@ -235,20 +239,21 @@ type Input struct {
 }
 
 type Command struct {
-	CommandID    string             `json:"commandId,omitempty"`
-	IssuedAt     time.Time          `json:"issuedAt,omitempty"`
-	Kind         CommandKind        `json:"kind"`
-	Origin       Origin             `json:"origin"`
-	Target       Target             `json:"target"`
-	Prompt       Prompt             `json:"prompt,omitempty"`
-	Overrides    PromptOverrides    `json:"overrides,omitempty"`
-	CodexResume  *CodexResumePolicy `json:"codexResume,omitempty"`
-	Request      Request            `json:"request,omitempty"`
-	ModelList    ModelListCommand   `json:"modelList,omitempty"`
-	MCP          MCPCommand         `json:"mcp,omitempty"`
-	Review       ReviewRequest      `json:"review,omitempty"`
-	Goal         GoalCommand        `json:"goal,omitempty"`
-	ShellCommand ShellCommand       `json:"shellCommand,omitempty"`
+	SideSessionID string             `json:"sideSessionId,omitempty"`
+	CommandID     string             `json:"commandId,omitempty"`
+	IssuedAt      time.Time          `json:"issuedAt,omitempty"`
+	Kind          CommandKind        `json:"kind"`
+	Origin        Origin             `json:"origin"`
+	Target        Target             `json:"target"`
+	Prompt        Prompt             `json:"prompt,omitempty"`
+	Overrides     PromptOverrides    `json:"overrides,omitempty"`
+	CodexResume   *CodexResumePolicy `json:"codexResume,omitempty"`
+	Request       Request            `json:"request,omitempty"`
+	ModelList     ModelListCommand   `json:"modelList,omitempty"`
+	MCP           MCPCommand         `json:"mcp,omitempty"`
+	Review        ReviewRequest      `json:"review,omitempty"`
+	Goal          GoalCommand        `json:"goal,omitempty"`
+	ShellCommand  ShellCommand       `json:"shellCommand,omitempty"`
 }
 
 // ShellCommand is a user-initiated command sent to a backend's native
@@ -323,6 +328,7 @@ type Origin struct {
 }
 
 type Target struct {
+	InstanceID string `json:"instanceId,omitempty"`
 	// Legacy prompt-dispatch carrier:
 	// - canonical semantics now live in PromptDispatchPlan and the
 	//   PromptDispatchPlanFromTarget/LegacyTarget boundary translator.

@@ -7,6 +7,11 @@ import (
 
 type Translator struct {
 	adapterkit.TranslatorBase
+	sideSessions               map[string]*codexSideSession
+	sideThreads                map[string]string
+	sideRequests               map[string]codexSideRequest
+	sideApprovalRequests       map[string]string
+	observedThreadConfig       map[string]map[string]any
 	instanceID                 string
 	currentThreadID            string
 	activeTurnByThread         map[string]string
@@ -140,6 +145,11 @@ type Result struct {
 
 func NewTranslator(instanceID string) *Translator {
 	return &Translator{
+		sideSessions:               map[string]*codexSideSession{},
+		sideThreads:                map[string]string{},
+		sideRequests:               map[string]codexSideRequest{},
+		sideApprovalRequests:       map[string]string{},
+		observedThreadConfig:       map[string]map[string]any{},
 		instanceID:                 instanceID,
 		knownThreadCWD:             map[string]string{},
 		activeTurnByThread:         map[string]string{},

@@ -241,6 +241,9 @@ func (s *Service) blockUnsafeFeishuRoomWorkspaceReset(room *state.FeishuRoomCont
 		if surface == nil {
 			continue
 		}
+		if surface.SideSession != nil {
+			return "A side session is open. Use /side quit before switching the room workspace."
+		}
 		if surface.PendingHeadless != nil {
 			return "当前群内有工作区正在启动，请等待完成后再切换。"
 		}
@@ -326,6 +329,11 @@ func (s *Service) reconcileFeishuRoomActiveReservations(room *state.FeishuRoomCo
 	for _, surface := range s.feishuRoomSurfaces(room.RoomID) {
 		if surface == nil {
 			continue
+		}
+		if side := surface.SideSession; side != nil && (side.Status == "opening" || side.ActiveCommandID != "") {
+			id := "side/" + side.SessionID
+			observed[id] = &state.FeishuRoomActiveReservationRecord{ReservationID: id, SurfaceSessionID: surface.SurfaceSessionID, InstanceID: side.InstanceID, ThreadID: side.ThreadID, TurnID: side.ActiveTurnID, Reason: "side", UpdatedAt: s.now()}
+			activeSurfaceIDs[surface.SurfaceSessionID] = true
 		}
 		item := activeQueueItem(surface)
 		if item != nil {

@@ -164,7 +164,7 @@ func (s *Service) reevaluateFollowSurfaces(instanceID string) []eventcontract.Ev
 }
 
 func (s *Service) reevaluateFollowSurface(surface *state.SurfaceConsoleRecord) []eventcontract.Event {
-	if surface == nil || surface.Abandoning || surface.AttachedInstanceID == "" || surface.RouteMode != state.RouteModeFollowLocal {
+	if surface == nil || surface.SideSession != nil || surface.Abandoning || surface.AttachedInstanceID == "" || surface.RouteMode != state.RouteModeFollowLocal {
 		return nil
 	}
 	if s.surfaceHasLiveRemoteWork(surface) {

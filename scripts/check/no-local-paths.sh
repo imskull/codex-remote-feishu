@@ -53,10 +53,20 @@ if command -v rg >/dev/null 2>&1; then
   for pattern in "${patterns[@]}"; do
     args+=(-e "${pattern}")
   done
-  raw_matches="$(rg -n "${args[@]}" -- "${files[@]}" || true)"
+  # Keep each native invocation below Windows' command-line length limit.
+  # A search with no matches exits 1; an actual search error must fail the gate.
+  raw_matches="$(printf '%s\0' "${files[@]}" | xargs -0 -n 100 bash -c '
+    "$@"
+    search_status=$?
+    if (( search_status > 1 )); then exit "${search_status}"; fi
+  ' _ rg -n --with-filename "${args[@]}" --)"
 else
   combined_pattern="$(IFS='|'; printf '%s' "${patterns[*]}")"
-  raw_matches="$(grep -nE "${combined_pattern}" "${files[@]}" || true)"
+  raw_matches="$(printf '%s\0' "${files[@]}" | xargs -0 -n 100 bash -c '
+    "$@"
+    search_status=$?
+    if (( search_status > 1 )); then exit "${search_status}"; fi
+  ' _ grep -HnE "${combined_pattern}")"
 fi
 
 filtered_matches="$(printf '%s\n' "${raw_matches}" | grep -vE "${allowlisted_demo_pattern}" || true)"

@@ -11,7 +11,7 @@ import (
 	"github.com/kxn/codex-remote-feishu/internal/xutil"
 )
 
-func (t *Translator) ObserveServer(raw []byte) (Result, error) {
+func (t *Translator) observeServer(raw []byte) (Result, error) {
 	var message map[string]any
 	if err := json.Unmarshal(raw, &message); err != nil {
 		return Result{}, err

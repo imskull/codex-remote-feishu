@@ -39,6 +39,9 @@ func (a *App) handleUIEventsLocked(ctx context.Context, events []eventcontract.E
 				event.Command.CommandID = a.nextCommandID()
 			}
 			instanceID := a.service.AttachedInstanceID(event.SurfaceSessionID)
+			if event.Command.SideSessionID != "" && event.Command.Target.InstanceID != "" {
+				instanceID = event.Command.Target.InstanceID
+			}
 			snapshot := a.service.SurfaceSnapshot(event.SurfaceSessionID)
 			a.debugf(
 				"dispatch prepare: surface=%s instance=%s command=%s kind=%s selectedThread=%s route=%s promptThread=%s promptCreate=%t pending=%s active=%s sourceMessage=%s",
@@ -58,7 +61,7 @@ func (a *App) handleUIEventsLocked(ctx context.Context, events []eventcontract.E
 				a.service.BindPendingReviewStartCommand(event.SurfaceSessionID, event.Command.CommandID)
 			} else if event.Command.Kind == agentproto.CommandThreadShellCommand {
 				a.service.BindPendingShellCommand(event.SurfaceSessionID, event.Command.CommandID)
-			} else if !orchestrator.NonTurnAgentCommand(event.Command.Kind) {
+			} else if event.Command.SideSessionID == "" && !orchestrator.NonTurnAgentCommand(event.Command.Kind) {
 				a.service.BindPendingRemoteCommand(event.SurfaceSessionID, event.Command.CommandID)
 			}
 			a.debugf(
@@ -79,7 +82,7 @@ func (a *App) handleUIEventsLocked(ctx context.Context, events []eventcontract.E
 			)
 			if instanceID == "" {
 				log.Printf("ui command skipped: surface=%s kind=%s err=no attached instance", event.SurfaceSessionID, event.Command.Kind)
-				rollback := a.service.HandleCommandDispatchFailure(event.SurfaceSessionID, event.Command.CommandID, agentproto.ErrorInfo{
+				rollback := a.commandDispatchFailure(event, agentproto.ErrorInfo{
 					Code:             "no_attached_instance",
 					Layer:            "daemon",
 					Stage:            "dispatch_prepare",
@@ -92,7 +95,7 @@ func (a *App) handleUIEventsLocked(ctx context.Context, events []eventcontract.E
 				continue
 			}
 			dispatchCommand := *event.Command
-			if !orchestrator.NonTurnAgentCommand(dispatchCommand.Kind) {
+			if dispatchCommand.SideSessionID == "" && !orchestrator.NonTurnAgentCommand(dispatchCommand.Kind) {
 				a.traceSteerCommand(event.SurfaceSessionID, instanceID, dispatchCommand)
 			}
 			dispatchCommand = a.prepareAgentCommandForDispatch(instanceID, dispatchCommand)
@@ -101,7 +104,7 @@ func (a *App) handleUIEventsLocked(ctx context.Context, events []eventcontract.E
 			a.mu.Lock()
 			if err != nil {
 				log.Printf("relay send command failed: instance=%s kind=%s err=%v", instanceID, event.Command.Kind, err)
-				rollback := a.service.HandleCommandDispatchFailure(event.SurfaceSessionID, event.Command.CommandID, agentproto.ErrorInfoFromError(err, agentproto.ErrorInfo{
+				rollback := a.commandDispatchFailure(event, agentproto.ErrorInfoFromError(err, agentproto.ErrorInfo{
 					Code:             "relay_send_command_failed",
 					Layer:            "daemon",
 					Stage:            "relay_send_command",

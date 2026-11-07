@@ -50,6 +50,14 @@ func ParseCardActionTriggerEvent(env RoutingEnv, event *larkcallback.CardActionT
 	}
 
 	switch kind {
+	case frontstagecontract.CardActionKindSideQuit:
+		sessionID := strings.TrimSpace(stringMapValue(value, frontstagecontract.CardActionPayloadKeySideSessionID))
+		if sessionID == "" || meta == nil || strings.TrimSpace(meta.CardDaemonLifecycleID) == "" {
+			return control.Action{}, false
+		}
+		return control.Action{Kind: control.ActionSideQuit,
+			SideSessionID: sessionID, GatewayID: gatewayID, SurfaceSessionID: surfaceSessionID,
+			ChatID: chatID, ActorUserID: operatorID, MessageID: messageID, Inbound: meta}, true
 	case cardActionKindAttachInstance:
 		instanceID := strings.TrimSpace(stringMapValue(value, frontstagecontract.CardActionPayloadKeyInstanceID))
 		if instanceID == "" {

@@ -218,6 +218,11 @@ func (s *Service) BindPendingReviewStartCommand(surfaceID, commandID string) {
 }
 
 func (s *Service) HandleCommandDispatchFailure(surfaceID, commandID string, err error) []eventcontract.Event {
+	if surface := s.root.Surfaces[surfaceID]; surface != nil {
+		if side := surface.SideSession; side != nil && side.ActiveCommandID == commandID {
+			return s.closeSideSession(surface, "Side dispatch failed. Input returns to the original conversation.")
+		}
+	}
 	if events := s.failGoalUserCommand(surfaceID, commandID, err); len(events) != 0 {
 		return events
 	}
@@ -332,6 +337,11 @@ func (s *Service) HandleCommandAccepted(instanceID string, ack agentproto.Comman
 }
 
 func (s *Service) HandleCommandRejected(instanceID string, ack agentproto.CommandAck) []eventcontract.Event {
+	for _, surface := range s.root.Surfaces {
+		if side := surface.SideSession; side != nil && side.InstanceID == instanceID && side.ActiveCommandID == ack.CommandID {
+			return s.closeSideSession(surface, "Side operation was rejected. "+ack.Error)
+		}
+	}
 	if ack.CommandID == "" {
 		return nil
 	}
@@ -786,6 +796,11 @@ func (s *Service) ApplyInstanceDisconnected(instanceID string) []eventcontract.E
 	inst.ActiveTurnID = ""
 	inst.ModelCatalog = nil
 	events := s.failCompactTurn(instanceID, "当前实例已离线，上下文压缩已中断。", nil, false)
+	for _, surface := range s.root.Surfaces {
+		if side := surface.SideSession; side != nil && side.InstanceID == instanceID {
+			events = append(events, s.closeSideSession(surface, "Side session ended because the wrapper disconnected. Input returns to the original conversation.")...)
+		}
+	}
 
 	for _, surface := range s.root.Surfaces {
 		pending := s.consumeSurfacePendingHeadlessLaunch(surface, instanceID)

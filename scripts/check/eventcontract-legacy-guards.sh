@@ -39,7 +39,8 @@ if [[ -n "${followup_heuristic_matches}" ]]; then
   failed=1
 fi
 
-resolver_matches="$(rg -n 'resolveGatewayTarget\(' internal/adapter/feishu --glob '!**/*_test.go' || true)"
+# Git Bash otherwise expands the literal slash argument into its install path.
+resolver_matches="$(MSYS_NO_PATHCONV=1 rg -n --path-separator / 'resolveGatewayTarget\(' internal/adapter/feishu --glob '!**/*_test.go' || true)"
 resolver_disallowed="$(printf '%s\n' "${resolver_matches}" | \
   grep -vE '^internal/adapter/feishu/(controller_gateway|controller_preview|controller_target_resolver)\.go:' || true)"
 if [[ -n "${resolver_disallowed}" ]]; then

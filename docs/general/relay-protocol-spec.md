@@ -1,8 +1,8 @@
 # Relay Protocol Spec
 
 > Type: `general`
-> Updated: `2026-08-16`
-> Summary: 在既有 canonical 协议基础上补充 `thread.shell_command`、Codex capability 声明、payload-file UserShell 注入和 queued `APPLAUSE` ack/恢复边界（#901）。
+> Updated: `2026-11-07`
+> Summary: 增加显式 side-session capability、open/close 生命周期及 session 定向的 prompt、interrupt 和 request 协议。
 
 ## 1. 文档定位
 
@@ -226,7 +226,7 @@ wrapper 收到 `command` 后总是回传 accept/reject：
 
 ## 4. Canonical Command
 
-当前只实现九个公共 command：
+当前公共 command 包括：
 
 - `prompt.send`
 - `thread.compact.start`
@@ -237,6 +237,8 @@ wrapper 收到 `command` 后总是回传 accept/reject：
 - `threads.refresh`
 - `thread.history.read`
 - `process.exit`
+- `side.session.open`
+- `side.session.close`
 
 这些 command 的真实定义在 [types.go](../../internal/core/agentproto/types.go)。
 
@@ -428,6 +430,19 @@ wrapper 只向 native `thread/shellCommand` 发送固定读取命令：POSIX 使
 - wrapper 收到后仍返回正常 `command_ack.accepted=true`
 - wrapper 不应等待新的 surface / queue 调度
 - wrapper 应在断开 relay 前完成 child 收敛，避免 daemon 误以为 stable entry 已释放
+
+### 4.9 Persistent side sessions
+
+`hello.capabilities.sideSession=true` is an explicit opt-in. A missing or false capability means unsupported; the daemon rejects `/side` without forwarding it as ordinary prompt text. The feature uses the existing `relay.agent.v1` envelope.
+
+- `side.session.open`: `sideSessionId` is a new server-chosen overlay identity, `target.threadId` is the parent conversation, and `target.cwd` is its workspace. Open does not send a prompt or change the selected parent thread.
+- `side.session.updated`: carries the same `sideSessionId`, lifecycle `commandId`, `status=open|closed|failed`, and the fork's `threadId` when available. Errors use `errorMessage`. The daemon waits for the matching open outcome before dispatching queued side input.
+- `prompt.send`, `turn.interrupt` and `request.respond`: a nonempty `sideSessionId` targets that side runtime; `target.instanceId`, `target.threadId` and `target.turnId` identify its execution target. The explicit instance target remains available for cleanup even after detach has cleared the surface attachment. Side events retain this identity alongside native request/thread/turn IDs. They cannot update parent execution ownership or consume its queue.
+- `side.session.close`: closes execution and removes routing for that identity; repeated close is harmless. Queued side input is discarded. Late events for a closed identity are ignored rather than retargeted to the parent.
+
+Codex forks with `thread/fork` and keeps the returned thread for follow-ups. It resolves configuration from that exact parent, never from another thread or a global last-used template; unknown effective permission settings fail closed rather than guessing broader access. Claude runs a separate child with `--resume <parent> --fork-session`, separate translator, IO, request tracking and cancellation. The primary child continues running. Both inherit parent configuration, permissions, model and workspace. Context is a snapshot at fork time; later parent output is not synchronized into the side history. Side conversations keep ordinary tool permissions and may change files; closing does not revert workspace changes or merge history into the parent.
+
+Side routing is temporary. Wrapper disconnect/shutdown closes side execution; daemon startup does not resume or replay a side queue into either conversation. A subsequent `/side` creates a fresh identity and fork.
 
 ## 5. Canonical Event
 

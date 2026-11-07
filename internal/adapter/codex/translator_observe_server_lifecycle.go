@@ -49,7 +49,9 @@ func (t *Translator) observeThreadStarted(message map[string]any) Result {
 		return Result{Events: []agentproto.Event{event}}
 	}
 	event := buildThreadDiscoveredEvent(threadRecord, threadID, cwd, name, status, loaded, runtimeStatus)
-	t.currentThreadID = threadID
+	if t.sideThreads[threadID] == "" {
+		t.currentThreadID = threadID
+	}
 	if t.pendingLocalNewThreadTurn && threadID != "" {
 		t.pendingLocalTurnByThread[threadID] = true
 		t.pendingLocalNewThreadTurn = false

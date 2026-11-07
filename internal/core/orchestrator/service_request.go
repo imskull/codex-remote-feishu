@@ -129,14 +129,15 @@ func (s *Service) presentRequestPrompt(instanceID string, event agentproto.Event
 		return notice(surface, "request_unsupported", unsupportedText)
 	}
 	record := &state.RequestPromptRecord{
-		RequestID:    event.RequestID,
-		RequestType:  requestType,
-		SemanticKind: definition.SemanticKind,
-		Backend:      backend,
-		Prompt:       event.RequestPrompt,
-		InstanceID:   instanceID,
-		ThreadID:     event.ThreadID,
-		TurnID:       event.TurnID,
+		SideSessionID: event.SideSessionID,
+		RequestID:     event.RequestID,
+		RequestType:   requestType,
+		SemanticKind:  definition.SemanticKind,
+		Backend:       backend,
+		Prompt:        event.RequestPrompt,
+		InstanceID:    instanceID,
+		ThreadID:      event.ThreadID,
+		TurnID:        event.TurnID,
 		SourceMessageID: func() string {
 			sourceMessageID, _ := s.replyAnchorForTurn(instanceID, event.ThreadID, event.TurnID)
 			return sourceMessageID
@@ -222,13 +223,16 @@ func (s *Service) resolvePendingRequestOnSurface(surface *state.SurfaceConsoleRe
 	removePendingRequest(surface, request.RequestID)
 	clearSurfaceRequestCaptureByRequestID(surface, request.RequestID)
 	if wasActive {
-		events = append(events, s.activatePendingRequest(surface, activePendingRequest(surface), "")...)
+		events = append(events, s.activatePendingRequest(surface, activePendingRequestInLane(surface, request.SideSessionID), "")...)
 	}
 	return events
 }
 
 func (s *Service) handleResolvedRequestPrompt(surface *state.SurfaceConsoleRecord, request *state.RequestPromptRecord, event agentproto.Event) []eventcontract.Event {
 	if surface == nil || request == nil {
+		return nil
+	}
+	if request.SideSessionID != "" {
 		return nil
 	}
 	if requestPromptBackend(request) != agentproto.BackendClaude {
@@ -566,6 +570,9 @@ func (s *Service) requestPromptView(record *state.RequestPromptRecord, threadTit
 		HintText:              strings.TrimSpace(record.HintText),
 		Phase:                 record.Phase,
 	}
+	if record.SideSessionID != "" {
+		view.TemporarySessionLabel = "Side mode"
+	}
 	view = planConfirmationRequestViewOverrides(record, view)
 	if requestLifecycleUsesWaitingDispatchPhase(record) {
 		view.Phase = frontstagecontract.PhaseWaitingDispatch
@@ -636,8 +643,9 @@ func (s *Service) autoDispatchUnsupportedToolCallback(surface *state.SurfaceCons
 			Kind:             eventcontract.KindAgentCommand,
 			SurfaceSessionID: surface.SurfaceSessionID,
 			Command: &agentproto.Command{
-				CommandID: commandID,
-				Kind:      agentproto.CommandRequestRespond,
+				SideSessionID: request.SideSessionID,
+				CommandID:     commandID,
+				Kind:          agentproto.CommandRequestRespond,
 				Origin: agentproto.Origin{
 					Surface: surface.SurfaceSessionID,
 					UserID:  surface.ActorUserID,
@@ -815,8 +823,9 @@ func (s *Service) dispatchRequestResponse(surface *state.SurfaceConsoleRecord, r
 		Kind:             eventcontract.KindAgentCommand,
 		SurfaceSessionID: surface.SurfaceSessionID,
 		Command: &agentproto.Command{
-			CommandID: commandID,
-			Kind:      agentproto.CommandRequestRespond,
+			CommandID:     commandID,
+			SideSessionID: request.SideSessionID,
+			Kind:          agentproto.CommandRequestRespond,
 			Origin: agentproto.Origin{
 				Surface:   surface.SurfaceSessionID,
 				UserID:    surface.ActorUserID,
@@ -899,7 +908,8 @@ func (s *Service) cancelRequestUserInputTurn(surface *state.SurfaceConsoleRecord
 		Kind:             eventcontract.KindAgentCommand,
 		SurfaceSessionID: surface.SurfaceSessionID,
 		Command: &agentproto.Command{
-			Kind: agentproto.CommandTurnInterrupt,
+			SideSessionID: request.SideSessionID,
+			Kind:          agentproto.CommandTurnInterrupt,
 			Origin: agentproto.Origin{
 				Surface:   surface.SurfaceSessionID,
 				UserID:    surface.ActorUserID,

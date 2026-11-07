@@ -46,7 +46,7 @@ func (s *Service) reconcileHeadlessSurfaceContract(surface *state.SurfaceConsole
 }
 
 func (s *Service) reconcileHeadlessSurfaceContractWithOptions(surface *state.SurfaceConsoleRecord, prepareNewOpenCodeThread bool) []eventcontract.Event {
-	if surface == nil {
+	if surface == nil || surface.SideSession != nil {
 		return nil
 	}
 	inst := s.root.Instances[strings.TrimSpace(surface.AttachedInstanceID)]

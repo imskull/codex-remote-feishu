@@ -3,6 +3,8 @@ package frontstagecontract
 import "strings"
 
 const (
+	CardActionKindSideQuit                    = "side_quit"
+	CardActionPayloadKeySideSessionID         = "side_session_id"
 	CardActionPayloadKeyKind                  = "kind"
 	CardActionPayloadKeyInstanceID            = "instance_id"
 	CardActionPayloadKeyWorkspaceKey          = "workspace_key"

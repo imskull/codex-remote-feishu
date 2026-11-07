@@ -49,6 +49,15 @@ func (s *Service) consumeCapturedRequestFeedback(surface *state.SurfaceConsoleRe
 		clearSurfaceRequestCapture(surface)
 		return notice(surface, "request_capture_expired", "当前反馈模式已失效，请重新处理确认卡片。")
 	}
+	if request.SideSessionID != "" {
+		if surface.SideSession == nil || surface.SideSession.SessionID != request.SideSessionID {
+			clearSurfaceRequestCapture(surface)
+			return notice(surface, "side_expired", "This side session has ended.")
+		}
+		clearSurfaceRequestCapture(surface)
+		events := s.dispatchRequestResponse(surface, request, action, map[string]any{"type": "approval", "decision": "decline"}, "")
+		return append(events, s.enqueueSideMessage(surface, action, []agentproto.Input{{Type: agentproto.InputText, Text: text}})...)
+	}
 
 	threadID := request.ThreadID
 	cwd := inst.WorkspaceRoot

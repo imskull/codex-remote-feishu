@@ -253,9 +253,15 @@ func (a *App) Run(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 	}
 
 	var client *relayws.Client
+	sideSessions := newClaudeSideSessions()
+	defer sideSessions.closeAll()
 	var activeChild *childSession
 	connectedOnce := false
 	client = relayws.NewClient(a.config.RelayServerURL, a.relayHello(), relayws.ClientCallbacks{
+		OnDisconnect: func() {
+			sideSessions.closeAll()
+			disconnectRuntimeSideSessions(a.runtime, writeCh, wrapperSideDisconnectTimeout, a.debugf)
+		},
 		OnWelcome: func(_ context.Context, welcome agentproto.Welcome) error {
 			a.debugf("relay welcome: connectedOnce=%t server=%s", connectedOnce, relayWelcomeSummary(welcome))
 			if manager.WelcomeCompatible(welcome) {
@@ -277,6 +283,9 @@ func (a *App) Run(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer
 			return nil
 		},
 		OnCommand: func(ctx context.Context, command agentproto.Command) error {
+			if a.runtime.Backend() == agentproto.BackendClaude && (command.SideSessionID != "" || command.Kind == agentproto.CommandSideSessionOpen || command.Kind == agentproto.CommandSideSessionClose) {
+				return sideSessions.handle(ctx, a, command, client, rawLogger)
+			}
 			if command.Kind == agentproto.CommandProcessExit {
 				a.debugf("relay shutdown command received: command=%s", command.CommandID)
 				select {

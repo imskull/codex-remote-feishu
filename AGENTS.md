@@ -1,5 +1,13 @@
 # AGENTS
 
+## Git commit messages
+
+- Use Conventional Commits: `<type>[optional scope][!]: <description>` with a concise, imperative description. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- Examples: `feat(feishu): switch workspaces by absolute path`, `ci: limit platform tests to Windows and macOS`, `docs: document local daemon rebuild after push`.
+- Before committing or amending, validate the message with `scripts/check/commit-message.sh <message-file>`. Install the repository hooks with `scripts/dev/install-git-hooks.sh` so manual and agent commits use the same check.
+- Do not append `Co-Authored-By:` trailers. Preserve original authors and file contents when rewording existing commits.
+- GitHub itself does not require Conventional Commits; this is the repository convention. Rewrite published commits only when explicitly authorized, and publish using an exact expected remote HEAD lease.
+
 ## 会话握手
 
 - 收到直接指令时，先简短复述：用户要求什么、我马上做什么。

@@ -8,10 +8,11 @@ TEST_CMD="${SAFE_PUSH_TEST_CMD:-go test ./...}"
 NO_TEST=0
 ALWAYS_TEST=0
 CONFIRM_REBASE_REVIEW=0
+REWRITE_EXPECTED=""
 
 usage() {
   cat <<'EOF'
-usage: ./safe-push.sh [--remote <name>] [--branch <name>] [--test-cmd <cmd>] [--always-test] [--no-test] [--confirm-rebase-review]
+usage: ./safe-push.sh [--remote <name>] [--branch <name>] [--test-cmd <cmd>] [--always-test] [--no-test] [--confirm-rebase-review] [--force-with-lease <expected-head>]
 
 Safe happy-path push helper for this repository.
 
@@ -33,6 +34,9 @@ any fetch/rebase/push work so missing local git hooks cannot leak common fast
 failures into CI.
 
 options:
+  --force-with-lease <expected-head>
+                     publish an authorized history rewrite only if the remote
+                     still has this exact full commit SHA; never rebase it
   --remote <name>    remote to push/fetch (default: tracking remote, else origin)
   --branch <name>    branch to push/rebase against (default: tracking branch, else current branch)
   --test-cmd <cmd>   shell command to run after successful rebase (default: `go test ./...`)
@@ -46,6 +50,11 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --force-with-lease)
+      [[ $# -ge 2 && "$2" =~ ^[0-9a-f]{40}$ ]] || { echo "expected a full remote commit SHA" >&2; exit 1; }
+      REWRITE_EXPECTED="$2"
+      shift 2
+      ;;
     --remote)
       [[ $# -ge 2 ]] || { echo "missing value for --remote" >&2; exit 1; }
       REMOTE="$2"
@@ -164,7 +173,13 @@ counts="$(git rev-list --left-right --count "HEAD...${remote_ref}")"
 read -r ahead behind <<< "${counts}"
 rebase_happened=0
 
-if [[ "${behind}" != "0" ]]; then
+if [[ -n "${REWRITE_EXPECTED}" ]]; then
+  if [[ "$(git rev-parse "${remote_ref}")" != "${REWRITE_EXPECTED}" ]]; then
+    echo "remote changed since rewrite authorization; push aborted" >&2
+    exit 5
+  fi
+  printf '[5/8] authorized history rewrite; exact remote HEAD verified; skip rebase\n'
+elif [[ "${behind}" != "0" ]]; then
   printf '[5/8] rebase onto %s/%s (ahead=%s behind=%s)\n' "${REMOTE}" "${BRANCH}" "${ahead}" "${behind}"
   if ! git rebase "${remote_ref}"; then
     cat >&2 <<'EOF'
@@ -233,4 +248,8 @@ else
 fi
 
 printf '[8/8] push %s HEAD:%s\n' "${REMOTE}" "${BRANCH}"
-git push "${REMOTE}" "HEAD:${BRANCH}"
+if [[ -n "${REWRITE_EXPECTED}" ]]; then
+  git push "--force-with-lease=refs/heads/${BRANCH}:${REWRITE_EXPECTED}" "${REMOTE}" "HEAD:${BRANCH}"
+else
+  git push "${REMOTE}" "HEAD:${BRANCH}"
+fi

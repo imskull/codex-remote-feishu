@@ -1,7 +1,7 @@
 # Feishu 卡片 UI 状态机
 
 > Type: `general`
-> Updated: `2026-08-15`
+> Updated: `2026-11-07`
 > Summary: 当前 live 的 Feishu 卡片 UI 已把 workspace/page/request/review 等 owner-flow 收口到稳定的 page / picker / request substrate；immediate `select_static` callback 的取值规则统一落在 `internal/adapter/feishu/selectflow`，按 `payload value -> form_value[field_name] -> option/options` 恢复，避免群聊回调把旧 option 误当成新选择；card callback 同步 replace 现在受 2.5 秒本地等待上限保护，超时后先 ack 再异步 patch/reply；`/workspace list` 与 alias `/list` 在工作区已确定后也会把 `新建会话` 作为合法 session 选项，并默认选中它；显式表单提交家族仍保持各自既有 submit 语义。
 
 ## 1. 文档定位
@@ -172,6 +172,7 @@
   - projector 直接以它为 owner 生成 `path_picker_*` callback payload
   - 当前不会再把目录浏览过程编码回 `FeishuDirectSelectionPrompt`
   - 当 path picker 作为 target picker owner-flow 子步骤打开时，`StageLabel` / `Question` 会把卡片切到 compact owner-subpage 布局：页头、允许范围、当前位置、目录下拉，以及 `返回` / `使用这个目录` 双按钮
+  - 工作区/目录草稿的初始位置已删除时，workspace 浏览入口会在同一允许根内定位最近的现存父目录，仍走相同 owner-flow 子页与 inline replace；打开不改写原草稿，用户确认后才回填目录。通用 picker 的显式初始路径、权限错误、越界与文件类型校验仍保持严格。回归覆盖目录与 Git 父目录两条子页入口。
 - 这些 DTO 当前都已经显式标注 owner，并与 query/policy context 分离：
   - DTO 形状暂未全部迁出
   - `UIEvent` 已经携带独立的 `FeishuSelectionContext` / `FeishuPageContext` / `FeishuRequestContext`（legacy command 路径仍保留 `FeishuCommandContext`）

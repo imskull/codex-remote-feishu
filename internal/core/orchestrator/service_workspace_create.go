@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -62,7 +63,37 @@ func (s *Service) openWorkspaceCreatePicker(surface *state.SurfaceConsoleRecord,
 }
 
 func workspacePickerPaths(initialPath string) (string, string) {
-	return workspacePickerPathsForGOOS(runtime.GOOS, initialPath, windowsWorkspaceCreateFallbackPath())
+	root, initial := workspacePickerPathsForGOOS(runtime.GOOS, initialPath, windowsWorkspaceCreateFallbackPath())
+	// A remembered workspace or draft is a browsing hint, not a selection.
+	// Deleted directories must not prevent opening the workspace browser.
+	resolvedRoot, err := resolvePathPickerRoot(root)
+	if err != nil {
+		return root, initial
+	}
+	candidate, err := filepath.Abs(initial)
+	if err != nil {
+		return root, initial
+	}
+	for pathWithinRoot(resolvedRoot, candidate) {
+		resolved, err := resolvePathPickerExistingTarget(resolvedRoot, candidate)
+		if err == nil {
+			if resolved.kind == pathPickerModeDirectory {
+				return root, resolved.path
+			}
+			return root, initial
+		}
+		// Preserve permission errors and symlink boundary failures for the
+		// picker to report; only missing hints may move to an ancestor.
+		if !os.IsNotExist(err) {
+			return root, initial
+		}
+		parent := filepath.Dir(candidate)
+		if samePath(candidate, parent) {
+			break
+		}
+		candidate = parent
+	}
+	return root, initial
 }
 
 func workspacePickerPathsForGOOS(goos, initialPath, windowsFallbackPath string) (string, string) {

@@ -110,7 +110,10 @@ func (t *Translator) translateSideCommand(command agentproto.Command) ([][]byte,
 	command.Target.ThreadID = session.threadID
 	switch command.Kind {
 	case agentproto.CommandPromptSend:
-		frame, _, err := t.directTurnStart(session.threadID, command, false)
+		frame, requestID, err := t.directTurnStart(session.threadID, command, false)
+		if err == nil {
+			t.sideRequests[requestID] = codexSideRequest{sessionID: id, commandID: command.CommandID, action: "prompt"}
+		}
 		return [][]byte{frame}, err
 	case agentproto.CommandTurnInterrupt:
 		turn := t.activeTurnByThread[session.threadID]
@@ -141,6 +144,10 @@ func (t *Translator) ObserveServer(raw []byte) (Result, error) {
 	}
 	if request, ok := t.sideRequests[fmt.Sprint(message["id"])]; ok {
 		delete(t.sideRequests, fmt.Sprint(message["id"]))
+		if request.action == "prompt" {
+			delete(t.pendingSuppressedResponse, fmt.Sprint(message["id"]))
+			return t.observeSidePromptResponse(request, message), nil
+		}
 		return t.observeSideResponse(request, message), nil
 	}
 	result, err := t.observeServer(raw)
@@ -175,6 +182,37 @@ func (t *Translator) ObserveServer(raw []byte) (Result, error) {
 		result.Suppress = true
 	}
 	return result, err
+}
+
+// The turn/start response is the authority for command -> turn identity. Native
+// turn/started notifications carry no command ID and may precede this response.
+func (t *Translator) observeSidePromptResponse(request codexSideRequest, message map[string]any) Result {
+	result := Result{Suppress: true}
+	session := t.sideSessions[request.sessionID]
+	if session == nil {
+		return result
+	}
+	turnID := lookupString(message, "result", "turn", "id")
+	errMsg := jsonrpcutil.ExtractErrorMessage(message)
+	if session.closed {
+		if turnID != "" {
+			result.OutboundToCodex = [][]byte{
+				t.sideRPC(request.sessionID, request.commandID, "interrupt", "turn/interrupt", map[string]any{"threadId": session.threadID, "turnId": turnID}),
+				t.sideRPC(request.sessionID, request.commandID, "cleanup", "thread/unsubscribe", map[string]any{"threadId": session.threadID}),
+			}
+		}
+		return result
+	}
+	event := agentproto.Event{Kind: agentproto.EventTurnStarted, SideSessionID: request.sessionID,
+		CommandID: request.commandID, ThreadID: session.threadID, TurnID: turnID, Status: "running"}
+	if errMsg != "" || turnID == "" {
+		delete(t.pendingRemoteTurnByThread, session.threadID)
+		event.Kind, event.Status = agentproto.EventTurnCompleted, "failed"
+		event.ErrorMessage = choose(errMsg, "Codex turn/start returned no turn id")
+		event.TurnCompletionOrigin = agentproto.TurnCompletionOriginTurnStartRejected
+	}
+	result.Events = []agentproto.Event{event}
+	return result
 }
 
 func (t *Translator) observeSideResponse(request codexSideRequest, message map[string]any) Result {

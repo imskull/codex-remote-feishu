@@ -76,6 +76,59 @@ func TestSideForkPreservesParentAndPersistentFollowups(t *testing.T) {
 	}
 }
 
+func TestSidePromptResponseCorrelatesRejectionAndLateStart(t *testing.T) {
+	for _, scenario := range []string{"rejected", "missing_turn", "closed"} {
+		t.Run(scenario, func(t *testing.T) {
+			tr := NewTranslator("instance")
+			sideReply(t, tr, sideOpen(t, tr, "side"), map[string]any{"thread": map[string]any{"id": "fork"}})
+			frames, err := tr.TranslateCommand(agentproto.Command{Kind: agentproto.CommandPromptSend,
+				SideSessionID: "side", CommandID: "side-prompt", Target: agentproto.Target{ThreadID: "fork"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := sideDecode(t, frames)
+			message := map[string]any{"id": request["id"], "result": map[string]any{}}
+			if scenario == "rejected" {
+				message["error"] = map[string]any{"code": -32602, "message": "permission denied"}
+			}
+			if scenario == "closed" {
+				if _, err := tr.TranslateCommand(agentproto.Command{Kind: agentproto.CommandSideSessionClose, SideSessionID: "side"}); err != nil {
+					t.Fatal(err)
+				}
+				message["result"] = map[string]any{"turn": map[string]any{"id": "late-turn"}}
+			}
+			raw, _ := json.Marshal(message)
+			result, err := tr.ObserveServer(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := tr.pendingSuppressedResponse[request["id"].(string)]; exists {
+				t.Fatal("side response leaked normal response gate")
+			}
+			if !result.Suppress {
+				t.Fatal("side response escaped to primary client")
+			}
+			if scenario == "closed" {
+				if len(result.Events) != 0 || len(result.OutboundToCodex) != 2 {
+					t.Fatalf("late start was not disposed: %#v", result)
+				}
+				params := sideDecode(t, result.OutboundToCodex[:1])["params"].(map[string]any)
+				if params["threadId"] != "fork" || params["turnId"] != "late-turn" {
+					t.Fatal("cleanup lost response turn identity")
+				}
+				return
+			}
+			if len(result.Events) != 1 {
+				t.Fatalf("missing rejection: %#v", result)
+			}
+			event := result.Events[0]
+			if event.Kind != agentproto.EventTurnCompleted || event.CommandID != "side-prompt" || event.SideSessionID != "side" || event.ThreadID != "fork" || event.Status != "failed" || event.ErrorMessage == "" {
+				t.Fatalf("uncorrelated rejection: %#v", event)
+			}
+		})
+	}
+}
+
 func TestSideCloseDuringStartupDisposesLateFork(t *testing.T) {
 	tr := NewTranslator("instance")
 	request := sideOpen(t, tr, "side")

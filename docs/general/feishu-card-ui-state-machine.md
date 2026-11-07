@@ -2,7 +2,7 @@
 
 > Type: `general`
 > Updated: `2026-11-07`
-> Summary: 增加 Side mode 状态、独立响应卡和带 session/lifecycle freshness 的退出动作。
+> Summary: 修正 Side mode 卡片的 schema V2 退出按钮，并覆盖实际渲染与 callback 回归。
 
 ## 1. 文档定位
 
@@ -1055,11 +1055,11 @@ MCP request 卡片当前新增的可视语义：
 
 Side notices and replies use the existing notice event/card carrier, with title `Side mode` and explicit `Notice.SideSessionID`. Replies use `Code=side_session_reply` and pass through the normal final-reply markdown, table and transport-budget split pipeline; continuation cards keep the `Side mode (continued)` label. `/status` retains the parent attachment information and adds `Snapshot.SideSession` status plus `/side quit`. Active side notices, reply primary cards and status cards expose `退出 Side mode`.
 
-The projector emits `kind=side_quit`, `side_session_id`, `surface_session_id` and `daemon_lifecycle_id`. Gateway parsing requires a nonempty session identity and lifecycle stamp and produces the dedicated `ActionSideQuit` with `SideSessionID=<id>`; the orchestrator interprets it as `/side quit`. The daemon's normal lifecycle validation rejects cards from previous daemon lifetimes; the orchestrator additionally compares the current side identity, so a same-daemon card from an earlier side session cannot close a newly opened one.
+The projector emits a schema V2 `button` directly, without the unsupported legacy `action/actions` wrapper, on active notices, primary reply cards and status cards. Its value carries `kind=side_quit`, `side_session_id`, `surface_session_id` and `daemon_lifecycle_id`. Gateway parsing requires a nonempty session identity and lifecycle stamp and produces the dedicated `ActionSideQuit` with `SideSessionID=<id>`; the orchestrator interprets it as `/side quit`. The daemon's normal lifecycle validation rejects cards from previous daemon lifetimes; the orchestrator additionally compares the current side identity, so a same-daemon card from an earlier side session cannot close a newly opened one.
 
 Quit is a state-changing append-only action. It does not replace the side reply that the user may still need to read. Completed side response cards remain history, while stale quit actions report that the old session ended. Main completion and approval cards retain their own request/thread/turn identity and remain actionable during Side mode. Approval FIFO uses `SideSessionID` as its lane identity (empty means main), so an earlier approval in the other conversation does not block an otherwise actionable card.
 
-Audit baseline: `projector_side_test.go` exercises the projector's actual quit payload through gateway parsing, rejects missing session/lifecycle fields, and verifies that long side replies split within the card budget without losing content. `feishu_commands_side_test.go` covers command parsing and backend support. `side_session_restart_test.go` verifies that persistence retains only the active marker and never side identity, fork target or queued input. The remote guardrail separately owns routing, queue, cancellation and cleanup checks.
+Audit baseline: `projector_side_test.go` exercises the rendered V2 quit payload through gateway parsing, rejects missing session/lifecycle fields and legacy action wrappers on notices/status/reply chunks, and verifies that long side replies split within the card budget without losing content. `feishu_commands_side_test.go` covers command parsing and backend support. `side_session_restart_test.go` verifies that persistence retains only the active marker and never side identity, fork target or queued input. The remote guardrail separately owns routing, queue, cancellation and cleanup checks.
 
 ## 待讨论取舍
 

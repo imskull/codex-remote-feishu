@@ -2,10 +2,11 @@ package feishu
 
 import (
 	"encoding/json"
-	"github.com/kxn/codex-remote-feishu/internal/core/control"
-	"github.com/kxn/codex-remote-feishu/internal/core/eventcontract"
 	"strings"
 	"testing"
+
+	"github.com/kxn/codex-remote-feishu/internal/core/control"
+	"github.com/kxn/codex-remote-feishu/internal/core/eventcontract"
 )
 
 func TestSideNoticeQuitCallbackRoundTrip(t *testing.T) {
@@ -17,8 +18,14 @@ func TestSideNoticeQuitCallbackRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected cards: %#v", ops)
 	}
 	// Exercise the actual value emitted by the projector through gateway parsing.
-	last := ops[0].CardElements[len(ops[0].CardElements)-1]
-	value := last["actions"].([]map[string]any)[0]["value"].(map[string]any)
+	rendered := renderOperationCard(ops[0], cardEnvelopeV2)
+	assertNoLegacyCardModelMarkersAny(t, rendered)
+	elements := rendered["body"].(map[string]any)["elements"].([]map[string]any)
+	last := elements[len(elements)-1]
+	if last["tag"] != "button" {
+		t.Fatalf("expected schema V2 quit button, got %#v", last)
+	}
+	value := last["value"].(map[string]any)
 	event := cardActionSurfaceEvent(surfaceID, "user-1", "oc_1", "om-1")
 	event.Event.Action.Value = value
 	gateway := NewLiveGateway(LiveGatewayConfig{GatewayID: "app-1"})
@@ -37,6 +44,22 @@ func TestSideNoticeQuitCallbackRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSideStatusQuitUsesSchemaV2Button(t *testing.T) {
+	ops := NewProjector().ProjectEvent("oc_1", eventcontract.Event{Kind: eventcontract.KindSnapshot,
+		SurfaceSessionID: "surface-1", DaemonLifecycleID: "daemon-1",
+		Snapshot: &control.Snapshot{SideSession: &control.SideSessionSummary{SessionID: "side-1", Status: "open"}}})
+	if len(ops) != 1 {
+		t.Fatalf("unexpected status cards: %#v", ops)
+	}
+	rendered := renderOperationCard(ops[0], cardEnvelopeV2)
+	assertNoLegacyCardModelMarkersAny(t, rendered)
+	elements := rendered["body"].(map[string]any)["elements"].([]map[string]any)
+	button := elements[len(elements)-1]
+	if button["tag"] != "button" || button["value"].(map[string]any)["side_session_id"] != "side-1" {
+		t.Fatalf("status lost side quit button: %#v", button)
+	}
+}
+
 func TestSideReplySplitsAtCardBudget(t *testing.T) {
 	body := strings.Repeat("This is a full side answer with preserved content.\n\n", 1800)
 	ops := NewProjector().ProjectEvent("oc_1", eventcontract.Event{Kind: eventcontract.KindNotice,
@@ -50,7 +73,9 @@ func TestSideReplySplitsAtCardBudget(t *testing.T) {
 		if !strings.HasPrefix(op.CardTitle, "Side mode") {
 			t.Fatalf("chunk %d lost side label", i)
 		}
-		data, err := json.Marshal(renderOperationCard(op, cardEnvelopeV2))
+		rendered := renderOperationCard(op, cardEnvelopeV2)
+		assertNoLegacyCardModelMarkersAny(t, rendered)
+		data, err := json.Marshal(rendered)
 		if err != nil {
 			t.Fatal(err)
 		}

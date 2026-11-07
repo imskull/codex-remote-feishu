@@ -21,16 +21,13 @@ func projectSideReply(chatID string, event eventcontract.Event, notice control.N
 
 func sideQuitElement(sessionID, lifecycleID, surfaceID string) map[string]any {
 	return map[string]any{
-		"tag": "action",
-		"actions": []map[string]any{{
-			"tag": "button", "type": "default",
-			"text": map[string]any{"tag": "plain_text", "content": "退出 Side mode"},
-			"value": map[string]any{
-				frontstagecontract.CardActionPayloadKeyKind:              frontstagecontract.CardActionKindSideQuit,
-				frontstagecontract.CardActionPayloadKeySideSessionID:     sessionID,
-				frontstagecontract.CardActionPayloadKeyDaemonLifecycleID: lifecycleID,
-				frontstagecontract.CardActionPayloadKeySurfaceSessionID:  surfaceID,
-			},
-		}},
+		"tag": "button", "type": "default",
+		"text": map[string]any{"tag": "plain_text", "content": "退出 Side mode"},
+		"value": map[string]any{
+			frontstagecontract.CardActionPayloadKeyKind:              frontstagecontract.CardActionKindSideQuit,
+			frontstagecontract.CardActionPayloadKeySideSessionID:     sessionID,
+			frontstagecontract.CardActionPayloadKeyDaemonLifecycleID: lifecycleID,
+			frontstagecontract.CardActionPayloadKeySurfaceSessionID:  surfaceID,
+		},
 	}
 }

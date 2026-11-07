@@ -5,6 +5,7 @@ import (
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
 const (
@@ -20,6 +21,8 @@ const (
 func NewLarkClient(appID, appSecret string, options ...lark.ClientOptionFunc) *lark.Client {
 	clientOptions := []lark.ClientOptionFunc{
 		lark.WithReqTimeout(defaultLarkRequestTimeout),
+		// Periodic API clients otherwise emit "client ready" on every refresh.
+		lark.WithLogLevel(larkcore.LogLevelWarn),
 	}
 	clientOptions = append(clientOptions, options...)
 	return lark.NewClient(

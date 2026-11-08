@@ -125,8 +125,8 @@ func TestStatusUsesSurfaceDefaultsWhenObservedConfigUnknown(t *testing.T) {
 	if snapshot.NextPrompt.EffectiveModel != "gpt-5.5" || snapshot.NextPrompt.EffectiveModelSource != "surface_default" {
 		t.Fatalf("expected default model fallback, got %#v", snapshot.NextPrompt)
 	}
-	if snapshot.NextPrompt.EffectiveReasoningEffort != "xhigh" || snapshot.NextPrompt.EffectiveReasoningEffortSource != "surface_default" {
-		t.Fatalf("expected xhigh reasoning fallback, got %#v", snapshot.NextPrompt)
+	if snapshot.NextPrompt.EffectiveReasoningEffort != "medium" || snapshot.NextPrompt.EffectiveReasoningEffortSource != "surface_default" {
+		t.Fatalf("expected medium reasoning fallback, got %#v", snapshot.NextPrompt)
 	}
 	if snapshot.NextPrompt.EffectiveAccessMode != agentproto.AccessModeFullAccess || snapshot.NextPrompt.EffectiveAccessModeSource != "surface_default" {
 		t.Fatalf("expected default full access, got %#v", snapshot.NextPrompt)

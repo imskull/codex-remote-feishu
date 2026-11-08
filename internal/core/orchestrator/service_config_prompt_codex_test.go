@@ -55,7 +55,7 @@ func TestCodexHeadlessObservedCWDDefaultsDoNotPersistWorkspaceDefaults(t *testin
 	if snapshot.NextPrompt.EffectiveModel != "gpt-5.5" || snapshot.NextPrompt.EffectiveModelSource != "surface_default" {
 		t.Fatalf("expected codex observed cwd model not to affect snapshot, got %#v", snapshot.NextPrompt)
 	}
-	if snapshot.NextPrompt.EffectiveReasoningEffort != "xhigh" || snapshot.NextPrompt.EffectiveReasoningEffortSource != "surface_default" {
+	if snapshot.NextPrompt.EffectiveReasoningEffort != "medium" || snapshot.NextPrompt.EffectiveReasoningEffortSource != "surface_default" {
 		t.Fatalf("expected codex observed cwd effort not to affect snapshot, got %#v", snapshot.NextPrompt)
 	}
 	if snapshot.NextPrompt.EffectiveAccessMode != agentproto.AccessModeFullAccess || snapshot.NextPrompt.EffectiveAccessModeSource != "surface_default" {

@@ -224,7 +224,7 @@ const (
 	requestCaptureModeSameRequestDecline  = "same_request_decline_with_feedback"
 	requestCaptureModePlanReviseFeedback  = "plan_revise_feedback"
 	defaultModel                          = "gpt-5.5"
-	defaultReasoningEffort                = "xhigh"
+	defaultReasoningEffort                = "medium"
 )
 
 func NewService(now func() time.Time, cfg Config, planner *renderer.Planner) *Service {

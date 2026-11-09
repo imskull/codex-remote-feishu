@@ -1,8 +1,8 @@
 # Feishu 卡片 UI 状态机
 
 > Type: `general`
-> Updated: `2026-11-07`
-> Summary: 修正 Side mode 卡片的 schema V2 退出按钮，并覆盖实际渲染与 callback 回归。
+> Updated: `2026-11-09`
+> Summary: Claude 执行权限卡新增 auto 选项，沿用当前配置页 apply 与 freshness 合同。
 
 ## 1. 文档定位
 
@@ -834,6 +834,8 @@ MCP request 卡片当前新增的可视语义：
 `GatewayID` 是可复用配置槽位，不足以证明 callback 仍属于当前机器人。AppID 替换或配置删除时，controller 会先关闭旧 gateway generation 的 action gate、取消事件源，并等待已经进入统一 action handler 的 callback 排空；只有此后 daemon 才写入 pending identity transition、撤销旧 surface 与 UI/card runtime、提交新的 bot identity generation 并启动新 runtime。
 
 因此新 App 不会沿用同一 GatewayID 下旧机器人的 surface owner、card owner 或 callback runtime。旧 generation 在 gate 关闭后到达的 callback 会被拒绝进入业务 handler；已经进入的 callback 会先完成，再由 identity transition 统一清理其结果。pending transition 会在 durable 清理或 identity commit 失败时保留不可撤回的清理栅栏，后续即使配置改回旧 AppID，也必须先清掉旧 generation 的 card owner；`/bendtomywill` 的 turn patch flow/transaction 也属于这组 card runtime，不能在新 bot identity 下继续投递。这个边界与 `daemon_lifecycle_id` 互补：前者隔离同一 daemon 内的 bot identity 代次，后者隔离 daemon 重启代次。
+
+Claude 的 bare `/access` 配置页在既有 full/confirm/clear 选项前显示 `auto`，其它 backend 不显示该选项。按钮复用 `/access auto` command apply、当前 daemon freshness 与配置页同卡收口；不新增 callback kind 或 owner。已存在会话可用 `/access auto` 覆盖最近观察到的 confirm/full；新会话无显式权限时默认 auto。
 
 ## 7. 当前回归基线
 

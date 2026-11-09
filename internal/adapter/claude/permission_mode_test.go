@@ -37,10 +37,10 @@ func TestClaudePermissionSelectionFromOverrides(t *testing.T) {
 		}
 	})
 
-	t.Run("empty access stays default", func(t *testing.T) {
+	t.Run("empty access defaults to auto", func(t *testing.T) {
 		selection := claudePermissionSelectionFromOverrides("", "")
-		if selection.NativeMode != claudePermissionModeDefault {
-			t.Fatalf("expected default for empty overrides, got %#v", selection)
+		if selection.NativeMode != claudePermissionModeAuto {
+			t.Fatalf("expected auto for empty overrides, got %#v", selection)
 		}
 	})
 }
@@ -52,6 +52,7 @@ func TestClaudePermissionSelectionFromNative(t *testing.T) {
 		accessMode string
 		planMode   string
 	}{
+		{name: "auto", nativeMode: "auto", accessMode: agentproto.AccessModeAuto, planMode: "off"},
 		{name: "default", nativeMode: "default", accessMode: agentproto.AccessModeConfirm, planMode: "off"},
 		{name: "accept edits", nativeMode: "acceptEdits", accessMode: agentproto.AccessModeAcceptEdits, planMode: "off"},
 		{name: "bypass", nativeMode: "bypassPermissions", accessMode: agentproto.AccessModeFullAccess, planMode: "off"},

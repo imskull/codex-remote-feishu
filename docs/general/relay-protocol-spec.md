@@ -1,8 +1,8 @@
 # Relay Protocol Spec
 
 > Type: `general`
-> Updated: `2026-11-07`
-> Summary: 增加显式 side-session capability、open/close 生命周期及 session 定向的 prompt、interrupt 和 request 协议。
+> Updated: `2026-11-09`
+> Summary: Claude auto 权限新增精确 observed 映射，并明确 prompt override 的 backend 边界。
 
 ## 1. 文档定位
 
@@ -729,10 +729,11 @@ queue interlock 状态机（`pause_pending -> quiescing -> draining -> resume_pe
 - 当 native mode 能被本地精确映射时：
   - `projectionKind=exact`
   - `accessMode / planMode` 与 `projectedAccessMode / projectedPlanMode` 同步可用
-- 当 native mode 当前没有本地精确 coarse projection（例如 `dontAsk` / `auto`）时：
+- 当 native mode 当前没有本地精确 coarse projection（例如 `dontAsk`）时：
   - `projectionKind=unmapped`
   - `observedPermission.nativeMode` 保留真实 raw mode
   - `accessMode / planMode` 不得再伪装成错误的 coarse 结论
+- Claude native `auto` 精确映射为 `accessMode=auto`、`planMode=off`、`projectionKind=exact`；`prompt.send.overrides.accessMode=auto` 仅适用于 Claude，并转换为 `set_permission_mode(auto)`。Claude 无显式或已观察权限时默认 auto；Codex/OpenCode 不支持该 intent，不能映射为 bypass/full。
 - 当前 `mcp_server_elicitation` 不走这条 observed permission 链；Claude runtime 发起的 `can_use_tool` 类 MCP tool approval 才与这套 observed truth 同族。
 
 ### 5.6 关键字段

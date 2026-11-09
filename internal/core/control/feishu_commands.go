@@ -316,7 +316,7 @@ var feishuCommandSpecs = []feishuCommandSpec{
 			CanonicalMenuKey: "access",
 			ArgumentKind:     FeishuCommandArgumentChoice,
 			ArgumentFormHint: "confirm",
-			ArgumentFormNote: "输入 full / confirm / clear。",
+			ArgumentFormNote: "输入 full / confirm / clear；Claude 还支持 auto（默认）。",
 			ArgumentSubmit:   "应用",
 			Description:      "查看当前执行权限；bare `/access` 会返回可选参数卡片。",
 			Examples:         []string{"/access confirm", "/access clear"},

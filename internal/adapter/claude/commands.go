@@ -136,6 +136,10 @@ func (t *Translator) translateTurnSteer(command agentproto.Command) ([][]byte, e
 }
 
 func (t *Translator) buildPermissionModeFrame(commandID, accessMode, planMode string) ([]byte, bool, error) {
+	// An omitted override on a resumed session inherits its native choice.
+	if strings.TrimSpace(accessMode) == "" && strings.TrimSpace(planMode) == "" && strings.TrimSpace(t.permissionMode) != "" {
+		return nil, false, nil
+	}
 	desired := claudePermissionSelectionFromOverrides(accessMode, planMode).NativeMode
 	if strings.TrimSpace(t.permissionMode) == desired {
 		return nil, false, nil

@@ -5,6 +5,7 @@ import "strings"
 const (
 	AccessModeFullAccess  = "full_access"
 	AccessModeConfirm     = "confirm"
+	AccessModeAuto        = "auto"
 	AccessModeAcceptEdits = "accept_edits"
 )
 
@@ -13,6 +14,8 @@ func NormalizeAccessMode(value string) string {
 	case "full", "full access", "fullaccess", "full_access", "full-access", "never",
 		"danger-full-access", "danger_full_access", "dangerfullaccess":
 		return AccessModeFullAccess
+	case "auto":
+		return AccessModeAuto
 	case "accept edits", "acceptedits", "accept_edits", "accept-edits":
 		return AccessModeAcceptEdits
 	case "confirm", "approval", "approve", "ask", "on-request", "on_request",
@@ -32,7 +35,7 @@ func EffectiveAccessMode(value string) string {
 
 func ApprovalPolicyForAccessMode(value string) string {
 	switch EffectiveAccessMode(value) {
-	case AccessModeConfirm, AccessModeAcceptEdits:
+	case AccessModeConfirm, AccessModeAcceptEdits, AccessModeAuto:
 		return "on-request"
 	default:
 		return "never"
@@ -41,7 +44,7 @@ func ApprovalPolicyForAccessMode(value string) string {
 
 func ThreadSandboxForAccessMode(value string) string {
 	switch EffectiveAccessMode(value) {
-	case AccessModeConfirm, AccessModeAcceptEdits:
+	case AccessModeConfirm, AccessModeAcceptEdits, AccessModeAuto:
 		return "workspace-write"
 	default:
 		return "danger-full-access"
@@ -50,7 +53,7 @@ func ThreadSandboxForAccessMode(value string) string {
 
 func TurnSandboxPolicyForAccessMode(value string) map[string]any {
 	switch EffectiveAccessMode(value) {
-	case AccessModeConfirm, AccessModeAcceptEdits:
+	case AccessModeConfirm, AccessModeAcceptEdits, AccessModeAuto:
 		return map[string]any{"type": "workspaceWrite"}
 	default:
 		return map[string]any{"type": "dangerFullAccess"}
@@ -59,6 +62,8 @@ func TurnSandboxPolicyForAccessMode(value string) map[string]any {
 
 func DisplayAccessModeShort(value string) string {
 	switch EffectiveAccessMode(value) {
+	case AccessModeAuto:
+		return "auto"
 	case AccessModeAcceptEdits:
 		return "accept-edits"
 	case AccessModeConfirm:

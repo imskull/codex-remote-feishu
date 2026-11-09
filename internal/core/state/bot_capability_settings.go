@@ -89,6 +89,9 @@ func BackendAcceptsFeishuPromptOverrides(backend agentproto.Backend) bool {
 
 func NormalizePromptOverrideForBackend(backend agentproto.Backend, record ModelConfigRecord) ModelConfigRecord {
 	record = NormalizeModelConfigRecord(record)
+	if agentproto.NormalizeBackend(backend) != agentproto.BackendClaude && record.AccessMode == agentproto.AccessModeAuto {
+		record.AccessMode = agentproto.AccessModeConfirm
+	}
 	if agentproto.NormalizeBackend(backend) == agentproto.BackendOpenCode {
 		return ModelConfigRecord{
 			ReasoningEffort: NormalizeOpenCodeReasoningEffort(record.ReasoningEffort),

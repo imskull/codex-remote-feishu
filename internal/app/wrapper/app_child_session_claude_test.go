@@ -135,3 +135,9 @@ func executableNameForWrapperTest(base string) string {
 	}
 	return base
 }
+
+func TestBuildClaudeChildLaunchDefaultsFreshSessionToAuto(t *testing.T) {
+	app := &App{config: Config{WorkspaceRoot: t.TempDir()}}
+	args, _ := app.buildClaudeChildLaunch(nil)
+	assertArgPair(t, args, "--permission-mode", "auto")
+}

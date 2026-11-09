@@ -79,3 +79,22 @@ func configPageSummaryText(page FeishuPageView) string {
 	}
 	return strings.Join(parts, "\n")
 }
+
+func TestAccessAutoChoiceIsClaudeOnly(t *testing.T) {
+	for _, backend := range []agentproto.Backend{agentproto.BackendClaude, agentproto.BackendCodex, agentproto.BackendOpenCode} {
+		page := BuildFeishuCommandConfigPageView(FeishuCatalogConfigView{CommandID: FeishuCommandAccess, CatalogBackend: backend})
+		found := false
+		for _, section := range page.Sections {
+			for _, entry := range section.Entries {
+				for _, button := range entry.Buttons {
+					if button.CommandText == "/access auto" {
+						found = true
+					}
+				}
+			}
+		}
+		if found != (backend == agentproto.BackendClaude) {
+			t.Fatalf("backend %s: auto option present %v", backend, found)
+		}
+	}
+}

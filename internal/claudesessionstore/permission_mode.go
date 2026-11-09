@@ -10,6 +10,7 @@ import (
 
 const (
 	claudePermissionModeDefault           = "default"
+	claudePermissionModeAuto              = "auto"
 	claudePermissionModeAcceptEdits       = "acceptEdits"
 	claudePermissionModePlan              = "plan"
 	claudePermissionModeBypassPermissions = "bypassPermissions"
@@ -24,6 +25,8 @@ type claudePermissionSelection struct {
 func CompileObservedPermissionStateFromClaudeNative(mode string) *agentproto.ObservedPermissionState {
 	nativeMode := xutil.FirstNonEmpty(strings.TrimSpace(mode), claudePermissionModeDefault)
 	switch nativeMode {
+	case claudePermissionModeAuto:
+		return &agentproto.ObservedPermissionState{NativeMode: nativeMode, ProjectedAccessMode: agentproto.AccessModeAuto, ProjectedPlanMode: string(state.PlanModeSettingOff), ProjectionKind: agentproto.ObservedPermissionProjectionKindExact}
 	case claudePermissionModeDefault:
 		return &agentproto.ObservedPermissionState{
 			NativeMode:          nativeMode,

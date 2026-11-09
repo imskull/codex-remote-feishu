@@ -250,3 +250,43 @@ func TestClaudeAbortCommandClearsPendingTurnAndControlReply(t *testing.T) {
 		t.Fatalf("expected second command to own next turn.start, got %#v", result.Events[0])
 	}
 }
+
+func TestTranslatePromptAutoPermissionMode(t *testing.T) {
+	for _, access := range []string{"", agentproto.AccessModeAuto} {
+		tr := NewTranslator("inst-auto")
+		if access != "" {
+			observeClaude(t, tr, map[string]any{"type": "system", "subtype": "init", "session_id": "session-auto", "permissionMode": "default"})
+		}
+		payloads, err := tr.TranslateCommand(agentproto.Command{
+			CommandID: "cmd-auto", Kind: agentproto.CommandPromptSend,
+			Prompt:    agentproto.Prompt{Inputs: []agentproto.Input{{Type: agentproto.InputText, Text: "research"}}},
+			Overrides: agentproto.PromptOverrides{AccessMode: access},
+		})
+		if err != nil || len(payloads) != 2 {
+			t.Fatalf("access %q: payload count %d, error %v", access, len(payloads), err)
+		}
+		frame := decodeFrame(t, payloads[0])
+		if request := testMapValue(frame["request"]); request["mode"] != "auto" {
+			t.Fatalf("expected auto request: %#v", frame)
+		}
+		requestID := frame["request_id"]
+		result := observeClaude(t, tr, map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": requestID}})
+		if tr.RuntimeStateSnapshot().AccessMode != agentproto.AccessModeAuto {
+			t.Fatalf("auto not observed after ack: %#v", result)
+		}
+	}
+}
+
+func TestRejectedAutoPermissionModeKeepsNativePermission(t *testing.T) {
+	tr := NewTranslator("inst-auto")
+	observeClaude(t, tr, map[string]any{"type": "system", "subtype": "init", "session_id": "session-auto", "permissionMode": "default"})
+	frame, ok, err := tr.buildPermissionModeFrame("cmd-auto", agentproto.AccessModeAuto, "off")
+	if err != nil || !ok {
+		t.Fatalf("build auto request: %v, %v", ok, err)
+	}
+	requestID := decodeFrame(t, frame)["request_id"]
+	result := observeClaude(t, tr, map[string]any{"type": "control_response", "response": map[string]any{"subtype": "error", "request_id": requestID, "error": "auto mode unavailable"}})
+	if tr.RuntimeStateSnapshot().NativePermissionMode != "default" || len(result.ResolvedCommandResponses) != 1 || result.ResolvedCommandResponses[0].RejectMessage == "" {
+		t.Fatalf("rejection must preserve native permission: %#v", result)
+	}
+}

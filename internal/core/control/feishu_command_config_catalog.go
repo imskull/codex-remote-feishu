@@ -216,6 +216,9 @@ func reasoningOptionsFromFormOptions(options []CommandCatalogFormFieldOption) []
 
 func accessPageViewFromCommandConfigView(view FeishuCatalogConfigView) FeishuPageView {
 	def, _ := FeishuCommandDefinitionByID(FeishuCommandAccess)
+	if agentproto.NormalizeBackend(view.CatalogBackend) == agentproto.BackendClaude {
+		def.Options = append([]FeishuCommandOption{commandOption("/access", "access", "auto", "auto", "由 Claude 自动审核工具调用（默认）。")}, def.Options...)
+	}
 	bodySections := BuildFeishuCommandConfigBodySections(def, view)
 	noticeSections := BuildFeishuCommandConfigNoticeSections(def, view)
 	if view.RequiresAttachment {

@@ -881,7 +881,7 @@ func (s *Service) handleAccessCommand(surface *state.SurfaceConsoleRecord, actio
 	if len(parts) != 2 {
 		return s.inlineCommandCardEvents(surface, action, control.FeishuCatalogConfigView{
 			StatusKind:       "error",
-			StatusText:       "用法：`/access` 查看当前配置；`/access full`；`/access confirm`；`/access clear`。",
+			StatusText:       "用法：`/access` 查看当前配置；`/access full`；`/access confirm`；`/access clear`；Claude 还支持 `/access auto`（默认）。",
 			FormDefaultValue: actionCommandArgumentText(action),
 		})
 	}
@@ -897,10 +897,10 @@ func (s *Service) handleAccessCommand(surface *state.SurfaceConsoleRecord, actio
 		})
 	}
 	mode := agentproto.NormalizeAccessMode(parts[1])
-	if mode == "" {
+	if mode == "" || (mode == agentproto.AccessModeAuto && s.surfaceBackend(surface) != agentproto.BackendClaude) {
 		return s.inlineCommandCardEvents(surface, action, control.FeishuCatalogConfigView{
 			StatusKind:       "error",
-			StatusText:       "执行权限建议使用 `full` 或 `confirm`。",
+			StatusText:       "执行权限使用 `full` 或 `confirm`；Claude 还支持 `auto`（默认）。",
 			FormDefaultValue: actionCommandArgumentText(action),
 		})
 	}

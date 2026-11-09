@@ -240,6 +240,9 @@ func (s *Service) resolvePromptConfig(inst *state.InstanceRecord, surface *state
 	if state.BackendAcceptsFeishuPromptOverrides(backend) {
 		effectiveAccessModeSource = "surface_default"
 		effectiveAccessMode = agentproto.AccessModeFullAccess
+		if agentproto.NormalizeBackend(backend) == agentproto.BackendClaude {
+			effectiveAccessMode = agentproto.AccessModeAuto
+		}
 	}
 	if agentproto.NormalizeAccessMode(override.AccessMode) != "" {
 		effectiveAccessMode = override.AccessMode

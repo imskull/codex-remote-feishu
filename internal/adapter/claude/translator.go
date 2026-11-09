@@ -58,6 +58,7 @@ type turnState struct {
 	LastAssistantText        string
 	AgentMessageCompleted    bool
 	FallbackAgentMessageUsed bool
+	BackgroundTasks          map[string]backgroundTask
 }
 
 func (t *turnState) trafficClass() agentproto.TrafficClass {

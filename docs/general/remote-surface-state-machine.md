@@ -1,8 +1,8 @@
 # Remote Surface 核心状态机
 
 > Type: `general`
-> Updated: `2026-11-08`
-> Summary: 将 Codex 全局推理强度回退改为 medium，保留 headless 仅下发显式 reasoning override 的行为。
+> Updated: `2026-11-09`
+> Summary: Claude 后台任务未结束时保留原 turn 与远端投递归属，避免中间 result 吞掉后续报告。
 > 1. visible 但 contract mismatch 的 workspace/session 仍然可见，不会再被 `/list`、`/use`、workspace recency、target picker 直接吞掉；
 > 2. 这些 mismatch 候选不会再假装“可直接接管”；
 > 3. detached `/use`、headless exact-thread restore、workspace attach、startup resume、`/mode` backend switch、`/claudeprofile`、`/codexprofile`、`/opencodeprofile` 现在都会统一先判定 `attach visible compatible / reuse managed compatible / restart managed incompatible / fresh-start matching headless / reject`，而不是各自维护平行 continuation；
@@ -1521,6 +1521,16 @@ E3 Running
    8. review detached frontstage 现在与 detour 共用同一条 temporary-session contract：`正在进入审阅` notice、`review_failed`、request / plan / `turn_failed` / shared progress / final card 都统一带 `TemporarySessionLabel="临时会话 · 审阅"`；review 不再依赖 app-layer 标题前缀去补可见语义
    9. `normal` verbosity 下，review 共享过程现在额外放开 `command_execution`、`dynamic_tool_call` 与 `web_search`，避免 detached review 只显示“开始/结束”而中间看起来像假死
    10. 对于没有显式 thread/turn carrier 的 review surface owner-card / page 事件，delivery fallback 也会按当前 active / ready review session 继承 `临时会话 · 审阅`；这样 auto-continue / compact 这类 review-only surface 卡不会丢失 review 语义
+
+### 5.2.1 Claude 后台任务与中间 result
+
+Claude native `result(success)` 不一定表示用户请求已经结束：原 turn 启动的后台 `Task` 或 `Bash` 仍可能运行，并在任务通知后继续生成报告。
+
+1. translator 只根据 `task_started(is_backgrounded=true)` 的 `session_id / run_id / task_id / tool_use_id` 与原 tool call 的 turn 归属登记后台任务，不按当前选中会话或到达时间猜测 owner。只有身份匹配的 terminal `task_notification` 才移除对应任务。
+2. 原 turn 仍有这些后台任务时，成功 result 是 yield：保留原 `TurnID / CommandID / Initiator`、`activeRemote` 与 `E3 Running`，不发 `turn.completed`，不消费后续 queued 输入。续写继续使用原 turn 投递；普通 follow-up 仍排队，显式 steer 仍并入该 turn。
+3. `task_updated` 或 `background_tasks_changed=[]` 本身不完成 turn。最后一个任务通知之后仍要等 root result，确保最终报告先进入投递链，再释放队列。失败或用户中断的 terminal result 不等待后台任务。
+4. 等待期间保持 `/stop`、`/detach` 入口：`/stop` 通过 active remote binding 中断原 turn，但 interrupt ack 只表示请求已被接受，不是 terminal result；不得据此合成完成事件并提前派发 queued 输入，否则随后到达的 native result 可能被误归到下一 turn。后台任务仍在时，即使已请求中断，成功 result 仍按 yield 处理；实际 `error_during_execution` result 才按既有中断语义收尾。若 idle native 不再返回 result，用户仍可 `/detach` 进入 `E6 Abandoning`，由正常收尾或既有 watchdog 释放接管。
+5. child restart 清理这份仅存于 translator 内存的任务归属，旧任务通知不能重新激活已结束的 turn。
 
 ### 5.3 本地 VS Code 仲裁
 

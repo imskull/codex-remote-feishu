@@ -14,7 +14,6 @@ import (
 	"github.com/kxn/codex-remote-feishu/internal/core/agentproto"
 	"github.com/kxn/codex-remote-feishu/internal/debuglog"
 	"github.com/kxn/codex-remote-feishu/internal/pathcanon"
-	"github.com/kxn/codex-remote-feishu/internal/pathcompare"
 )
 
 type runtimeObserveResult struct {
@@ -902,6 +901,8 @@ func (r *claudeBackendRuntime) lookupStoredResumeTarget(dispatchPlan agentproto.
 		return nil, false, nil
 	}
 	cwd := strings.TrimSpace(dispatchPlan.CWD)
+	// Ownership follows the session's original workspace, not its latest cwd:
+	// Claude may change directories while working in the same conversation.
 	if meta, err := claudesessionstore.ResolveResumeSession(r.workspaceRoot, threadID); err != nil {
 		return nil, false, agentproto.ErrorInfo{
 			Code:      "claude_resume_workspace_mismatch",
@@ -919,18 +920,6 @@ func (r *claudeBackendRuntime) lookupStoredResumeTarget(dispatchPlan agentproto.
 	}
 	if cwd == "" {
 		cwd = strings.TrimSpace(r.workspaceRoot)
-	}
-	if strings.TrimSpace(cwd) != "" && strings.TrimSpace(r.workspaceRoot) != "" &&
-		!pathcompare.SameCleanPlatformPath(cwd, r.workspaceRoot) {
-		return nil, false, agentproto.ErrorInfo{
-			Code:      "claude_resume_workspace_mismatch",
-			Layer:     "wrapper",
-			Stage:     "prepare_child_restart",
-			Operation: string(agentproto.CommandPromptSend),
-			Message:   "目标 Claude 会话不属于当前工作区，当前不能直接恢复到这个会话。",
-			Details:   "target cwd does not match wrapper workspace root",
-			ThreadID:  threadID,
-		}
 	}
 	return &claudeLaunchResumeTarget{
 		ThreadID: threadID,

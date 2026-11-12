@@ -1,8 +1,8 @@
 # Remote Surface 核心状态机
 
 > Type: `general`
-> Updated: `2026-11-09`
-> Summary: Claude 新会话默认使用 auto 权限，支持会话级 `/access auto`，并保留显式与原生已观察权限。
+> Updated: `2026-11-12`
+> Summary: Claude resume 与 Side fork 按会话初始 workspace 校验归属，避免工作目录变化导致误拒绝。
 > 1. visible 但 contract mismatch 的 workspace/session 仍然可见，不会再被 `/list`、`/use`、workspace recency、target picker 直接吞掉；
 > 2. 这些 mismatch 候选不会再假装“可直接接管”；
 > 3. detached `/use`、headless exact-thread restore、workspace attach、startup resume、`/mode` backend switch、`/claudeprofile`、`/codexprofile`、`/opencodeprofile` 现在都会统一先判定 `attach visible compatible / reuse managed compatible / restart managed incompatible / fresh-start matching headless / reject`，而不是各自维护平行 continuation；
@@ -2090,6 +2090,7 @@ Each surface may own one runtime-only `SideSessionRecord`. It records the sessio
 
 - `/side` opens an empty side session; `/side <message>` also queues the first side message. Entry requires a selected connected Codex/Claude conversation, explicit wrapper `SideSession` capability and no competing exclusive overlay.
 - Opening waits for a matching `side.session.updated` outcome before dispatch. Plain follow-ups stay in the same side history. Repeated `/side` reports that session; repeated `/side <message>` adds another side message without nesting.
+- Claude resume and side-fork source lookup validate the transcript's original `WorkspaceKey` against the wrapper workspace. The latest transcript `CWD` is retained as execution context and may differ after a directory change; it is not a second workspace-ownership gate. A foreign session remains rejected even if its latest `CWD` matches this workspace. `TestClaudeResumeAndSideForkUseOriginalWorkspaceOwnership` covers both cases.
 - Side queue dispatch and turn completion use explicit session/command/thread/turn IDs. Side events are handled before ordinary parent event projection and do not drain the main queue. Request cards retain explicit identities; approval FIFO is scoped by `SideSessionID` (empty means main), so a main approval cannot block the active side approval or the reverse. Main approvals and results remain usable.
 - Codex side `turn/start` responses correlate the native RPC request ID with the side command and returned turn ID, emitting a correlated `turn.started` event even when the native notification arrives first without a command ID. A rejected or malformed response emits a correlated failed completion, releasing the side queue instead of waiting for the startup watchdog. A successful response after quit interrupts that exact returned turn and unsubscribes the fork. `service_side_codex_test.go` covers both response/notification orders through the real translator and orchestrator, reply delivery, parent ownership and absence of a later false startup timeout; translator tests cover rejection, missing turn identity and late response disposal.
 - `/stop` while side mode is active interrupts side execution only. `/side quit` interrupts/closes side work, discards its pending messages, clears routing and returns subsequent input to the unchanged parent selection. Repeated quit is harmless. Re-entry creates a fresh fork, and side history never merges into the parent.

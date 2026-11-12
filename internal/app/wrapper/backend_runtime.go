@@ -431,6 +431,10 @@ func (r *claudeBackendRuntime) Launch(ctx context.Context, app *App, rawLogger *
 	}
 	r.mu.Lock()
 	resume := r.consumeLaunchResumeTarget()
+	if err := r.restoreLaunchPermissionMode(resume); err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
 	resumeThreadID := ""
 	if resume != nil {
 		resumeThreadID = strings.TrimSpace(resume.ThreadID)
@@ -875,10 +879,8 @@ func (r *claudeBackendRuntime) resolveLaunchResumeTarget(dispatchPlan agentproto
 	if cwd == "" {
 		cwd = resume.CWD
 	}
-	return &claudeLaunchResumeTarget{
-		ThreadID: threadID,
-		CWD:      cwd,
-	}, nil
+	resume.CWD = cwd
+	return resume, nil
 }
 
 func (r *claudeBackendRuntime) lookupForkSourceTarget(dispatchPlan agentproto.PromptDispatchPlan) (*claudeLaunchResumeTarget, bool, error) {
@@ -901,6 +903,7 @@ func (r *claudeBackendRuntime) lookupStoredResumeTarget(dispatchPlan agentproto.
 		return nil, false, nil
 	}
 	cwd := strings.TrimSpace(dispatchPlan.CWD)
+	permissionMode := ""
 	// Ownership follows the session's original workspace, not its latest cwd:
 	// Claude may change directories while working in the same conversation.
 	if meta, err := claudesessionstore.ResolveResumeSession(r.workspaceRoot, threadID); err != nil {
@@ -915,15 +918,19 @@ func (r *claudeBackendRuntime) lookupStoredResumeTarget(dispatchPlan agentproto.
 		}
 	} else if meta == nil {
 		return nil, false, nil
-	} else if meta != nil && strings.TrimSpace(meta.CWD) != "" {
-		cwd = strings.TrimSpace(meta.CWD)
+	} else {
+		permissionMode = strings.TrimSpace(meta.NativePermissionMode)
+		if strings.TrimSpace(meta.CWD) != "" {
+			cwd = strings.TrimSpace(meta.CWD)
+		}
 	}
 	if cwd == "" {
 		cwd = strings.TrimSpace(r.workspaceRoot)
 	}
 	return &claudeLaunchResumeTarget{
-		ThreadID: threadID,
-		CWD:      cwd,
+		ThreadID:       threadID,
+		CWD:            cwd,
+		PermissionMode: permissionMode,
 	}, true, nil
 }
 

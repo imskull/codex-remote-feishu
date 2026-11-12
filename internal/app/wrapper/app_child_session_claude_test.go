@@ -60,7 +60,7 @@ func TestBuildClaudeChildLaunchNormalResumeDoesNotUseReviewForkFlags(t *testing.
 	assertNotContainsArg(t, args, "--agent")
 	assertNotContainsArg(t, args, "--tools")
 	assertNotContainsArg(t, args, "--disallowedTools")
-	assertNotContainsArg(t, args, "--permission-mode")
+	assertArgPair(t, args, "--permission-mode", "auto")
 }
 
 func normalizeExecutablePathForWrapperTest(t *testing.T, path string) string {

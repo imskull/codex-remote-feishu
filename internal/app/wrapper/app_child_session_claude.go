@@ -79,9 +79,11 @@ func (a *App) buildClaudeChildLaunch(resume *claudeLaunchResumeTarget) ([]string
 		"--allow-dangerously-skip-permissions",
 		"--permission-prompt-tool", "stdio",
 	}
-	if resume == nil || (strings.TrimSpace(resume.ThreadID) == "" && strings.TrimSpace(resume.PermissionMode) == "") {
-		args = append(args, "--permission-mode", "auto")
+	permissionMode := "auto"
+	if resume != nil && strings.TrimSpace(resume.PermissionMode) != "" {
+		permissionMode = strings.TrimSpace(resume.PermissionMode)
 	}
+	args = append(args, "--permission-mode", permissionMode)
 	if resume != nil && strings.TrimSpace(resume.ThreadID) != "" {
 		args = append(args, "--resume", strings.TrimSpace(resume.ThreadID))
 	}
@@ -92,9 +94,6 @@ func (a *App) buildClaudeChildLaunch(resume *claudeLaunchResumeTarget) ([]string
 		args = append(args, "--session-id", resume.SideThreadID)
 		if resume.Model != "" {
 			args = append(args, "--model", resume.Model)
-		}
-		if resume.PermissionMode != "" {
-			args = append(args, "--permission-mode", resume.PermissionMode)
 		}
 	}
 	if resume != nil && strings.TrimSpace(resume.ReviewerAgent) != "" {

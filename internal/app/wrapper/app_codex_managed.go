@@ -26,7 +26,7 @@ func (a *App) selectCodexChildBinary(ctx context.Context, env []string, ensure e
 	if strings.TrimSpace(a.config.RuntimePaths.StateDir) == "" {
 		return "", fmt.Errorf("daemon-owned Codex requires a private runtime state directory")
 	}
-	// The daemon warms updates before its pool starts and every fifteen minutes.
+	// The daemon checks updates in the background at startup and every fifteen minutes.
 	// Child startup must also fit the existing restart and headless watchdogs.
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

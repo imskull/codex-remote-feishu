@@ -20,9 +20,18 @@ func (a *App) warmManagedCodex(ctx context.Context, startup bool, ensure ensureM
 		return
 	}
 	if ensure == nil {
-		ensure = codexmanaged.EnsureWithEnv
+		if startup {
+			// Gateways must not wait for npm or a concurrent network updater.
+			ensure = codexmanaged.SelectLocalWithEnv
+		} else {
+			ensure = codexmanaged.EnsureWithEnv
+		}
 	}
-	updateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	timeout := 2 * time.Minute
+	if startup {
+		timeout = codexOAuthProbeTimeout
+	}
+	updateCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	binary, err := ensure(updateCtx, cfg.CodexRealBinary, filepath.Join(cfg.Paths.StateDir, "codex-runtime"), cfg.BaseEnv)
 	if err != nil {
@@ -41,6 +50,9 @@ func (a *App) warmManagedCodex(ctx context.Context, startup bool, ensure ensureM
 }
 
 func (a *App) runManagedCodexUpdates(ctx context.Context) {
+	// Network maintenance starts in Run's existing background worker. It never
+	// replaces the binary already selected for startup capability/native probes.
+	a.warmManagedCodex(ctx, false, nil)
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
 	for {

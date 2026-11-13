@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	relayruntime "github.com/kxn/codex-remote-feishu/internal/runtime"
 )
@@ -18,8 +19,8 @@ func TestManagedCodexWarmupBindsStartupProbesToPrivateBinary(t *testing.T) {
 		if configured != "/original/codex" || privateRoot != filepath.Join(root, "codex-runtime") || !reflect.DeepEqual(childEnv, env) {
 			t.Fatalf("wrong update material: %s %s %v", configured, privateRoot, childEnv)
 		}
-		if _, ok := ctx.Deadline(); !ok {
-			t.Fatal("startup update has no watchdog")
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 11*time.Second {
+			t.Fatal("local startup selection must use a short watchdog")
 		}
 		return "/private/codex", nil
 	})

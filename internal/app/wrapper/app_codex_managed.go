@@ -27,11 +27,12 @@ func (a *App) selectCodexChildBinary(ctx context.Context, env []string, ensure e
 		return "", fmt.Errorf("daemon-owned Codex requires a private runtime state directory")
 	}
 	// The daemon checks updates in the background at startup and every fifteen minutes.
-	// Child startup must also fit the existing restart and headless watchdogs.
+	// Select verified local binaries without waiting for that updater or network I/O;
+	// child startup must fit the existing restart and headless watchdogs.
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if ensure == nil {
-		ensure = codexmanaged.EnsureWithEnv
+		ensure = codexmanaged.SelectLocalWithEnv
 	}
 	binary, err := ensure(checkCtx, a.config.CodexRealBinary, filepath.Join(a.config.RuntimePaths.StateDir, "codex-runtime"), env)
 	if err != nil {

@@ -84,7 +84,7 @@ func TestResolveFeishuCommandDisplayGroupAppliesClaudeSupportProfile(t *testing.
 		Backend:     agentproto.BackendClaude,
 		ProductMode: "normal",
 	})
-	if got, want := resolvedDisplayCommands(sendSettings), []string{"/mode", "/reasoning", "/access", "/plan", "/verbose", "/claudeprofile"}; !reflect.DeepEqual(got, want) {
+	if got, want := resolvedDisplayCommands(sendSettings), []string{"/mode", "/reasoning", "/access", "/plan", "/verbose", "/claudeprofile", "/goal"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("claude send_settings help commands = %#v, want %#v", got, want)
 	}
 
@@ -102,6 +102,17 @@ func TestResolveFeishuCommandDisplayGroupAppliesClaudeSupportProfile(t *testing.
 	})
 	if got, want := resolvedDisplayCommands(maintenance), []string{"/admin", "/upgrade", "/debug", "/help", "/menu"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("claude maintenance help commands = %#v, want %#v", got, want)
+	}
+}
+
+func TestGoalDisplayUsesBackendSpecificSyntax(t *testing.T) {
+	claudeGoal, ok := ResolveFeishuCommandDisplayFamily(FeishuCommandGoal, false, CatalogContext{Backend: agentproto.BackendClaude, ProductMode: "normal"})
+	if !ok || len(claudeGoal.Definition.Examples) == 0 || claudeGoal.Definition.Examples[0] != "/goal all tests pass and lint is clean" {
+		t.Fatalf("Claude help must show native condition syntax: %#v", claudeGoal)
+	}
+	codexGoal, ok := ResolveFeishuCommandDisplayFamily(FeishuCommandGoal, false, CatalogContext{Backend: agentproto.BackendCodex, ProductMode: "normal"})
+	if !ok || !reflect.DeepEqual(codexGoal.Definition.Examples, []string{"/goal", "/goal new 完成登录流程重构", "/goal pause"}) {
+		t.Fatalf("Claude projection changed Codex goal controls: %#v", codexGoal)
 	}
 }
 

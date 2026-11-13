@@ -3,6 +3,7 @@ package control
 import (
 	"strings"
 
+	"github.com/kxn/codex-remote-feishu/internal/core/agentproto"
 	"github.com/kxn/codex-remote-feishu/internal/core/state"
 )
 
@@ -46,7 +47,14 @@ func projectFeishuCommandDefinitionForDisplay(def FeishuCommandDefinition, inter
 		return FeishuCommandDefinition{}, false
 	}
 
-	return cloneFeishuCommandDefinition(def), true
+	projected := cloneFeishuCommandDefinition(def)
+	if def.ID == FeishuCommandGoal && ctx.Backend == agentproto.BackendClaude {
+		projected.ArgumentFormHint = "<完成条件>|clear"
+		projected.ArgumentFormNote = "Claude 原生 Goal：设置/替换完成条件、查看状态或清除。"
+		projected.Description = "`/goal <完成条件>` 设置或替换，`/goal` 查看，`/goal clear` 清除。执行中指令会排队；立即中断请先 `/stop`，收尾后再清除。"
+		projected.Examples = []string{"/goal all tests pass and lint is clean", "/goal", "/goal clear"}
+	}
+	return projected, true
 }
 func BuildFeishuCommandDisplayPageViewForContext(title, summary string, interactive bool, ctx CatalogContext) FeishuPageView {
 	sections := make([]CommandCatalogSection, 0, len(feishuCommandGroups))

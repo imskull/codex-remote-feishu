@@ -83,6 +83,7 @@ var feishuCommandDisplayProfiles = map[string]FeishuCommandDisplayProfile{
 		commandSupportHiddenReject(FeishuCommandOpenCodeProfile, FeishuCommandSupportReject, "当前不在 OpenCode 模式，暂时不能切换 OpenCode Profile。请先 `/mode opencode`。"),
 	),
 	"claude": newFeishuCommandDisplayProfile("claude", false,
+		commandSupportVisibleAs(FeishuCommandGoal, FeishuCommandSupportPassthrough, "Claude 原生 Goal：/goal <完成条件> 设置或替换，/goal 查看，/goal clear 清除。执行中指令会排队；立即中断请先 /stop。不支持 Codex 的 new/edit/pause/resume 或 --budget。"),
 		commandSupportVisible(FeishuCommandStop),
 		commandSupportVisible(FeishuCommandSide),
 		commandSupportVisibleAs(FeishuCommandNew, FeishuCommandSupportApproximation, "Claude 会话切换沿用现有产品壳，但底层走 backend-aware session catalog 与 route contract。"),

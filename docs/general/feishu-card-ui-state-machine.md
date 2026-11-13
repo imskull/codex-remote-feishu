@@ -1,8 +1,8 @@
 # Feishu 卡片 UI 状态机
 
 > Type: `general`
-> Updated: `2026-11-09`
-> Summary: Claude 执行权限卡新增 auto 选项，沿用当前配置页 apply 与 freshness 合同。
+> Updated: `2026-11-13`
+> Summary: Claude /goal 菜单入口复用现有 freshness 和 prompt 输出，不生成 Codex Goal 控制卡。
 
 ## 1. 文档定位
 
@@ -16,7 +16,7 @@
 
 2026-08-13 #888/#889 补充：Claude 与 OpenCode `/review` 均从 hidden reject 改为 common tools 可见的 approximation；bare `/review`、review 页面和 final-card 待提交/commit 按钮复用与 Codex 相同的卡片交互，底层分别走独立 Claude fork session 与 OpenCode ACP fork/review mode。结果卡、一次性追问 capture、退出和应用动作保持 backend-neutral；active turn 上的退出动作先发送一次 interrupt，并在匹配终态后才清 overlay，不能提前释放并发 ownership。OpenCode fork 在 review mode gate 前已经按 typed binding 标记 `source=review`，mode/config 失败会清 overlay 与 active queue，不产生可操作结果卡。
 
-2026-08-15 #896 补充：`/goal` 是新增 config-flow slash command，完全复用现有命令卡体系：bare `/goal` 经现有命令解析与 freshness 校验，通过 `pageEvent` inline replace 回显 Goal 状态页；`/goal clear` 的确认/取消通过 `CommandText` 命令重放（`/goal clear --confirm`、`/goal`），不引入新 callback payload、不新增 owner 分类、不改 `daemon_lifecycle_id` stamping。状态页按钮均声明在 `FeishuCommandBinding` 上（`CommandID=goal`），走 `CommandCatalogButtonCallbackAction`，与 `/codexprofile` 等配置命令同一条路由，Goal 控制面不产生第二套卡片 carrier 或 freshness 规则。
+2026-08-15 #896 补充：Codex `/goal` 是新增 config-flow slash command，完全复用现有命令卡体系：bare `/goal` 经现有命令解析与 freshness 校验，通过 `pageEvent` inline replace 回显 Goal 状态页；`/goal clear` 的确认/取消通过 `CommandText` 命令重放（`/goal clear --confirm`、`/goal`），不引入新 callback payload、不新增 owner 分类、不改 `daemon_lifecycle_id` stamping。状态页按钮均声明在 `FeishuCommandBinding` 上（`CommandID=goal`），走 `CommandCatalogButtonCallbackAction`，与 `/codexprofile` 等配置命令同一条路由，Goal 控制面不产生第二套卡片 carrier 或 freshness 规则。
 
 2026-08-15 #896 review 修复补充：确认卡/编辑表单打开时服务端暂存 Goal fingerprint，命令重放执行前比对、漂移 fail closed；goal 命令发送失败会清理 pending 并回错误卡；卡片入口触发的 loading 与结果卡通过 `MessageID + Patchable` 在同一 message 上 patch；错误页复用 config 命令 builder（非 sealed），失败原因不伪装成 no-goal 状态。
 
@@ -37,6 +37,8 @@
 菜单卡的工程使用规约另见：
 
 - [feishu-menu-card-usage-guidelines.md](./feishu-menu-card-usage-guidelines.md)
+
+2026-11-13 Claude Goal：`/goal` 在 Claude help/menu 可见，沿用当前 `CommandID=goal` binding、callback freshness 与 config-flow 入口解析，但 reducer 将其分派到普通 prompt 队列。bare `/goal` 输出 Claude 原生状态，`/goal <完成条件>` 和 `/goal clear` 输出沿用普通 timeline/result；不渲染 Codex Goal 状态页、预算表单或确认按钮，不更改 callback schema、owner 分类、replace/append 或 lifecycle stamping。执行期间 Goal 命令排队，`/stop` 是立即中断出口；pending request/capture 或暂存附件阻止命令时返回可恢复 notice。
 
 ## 2. 双 Guardrail 规则
 

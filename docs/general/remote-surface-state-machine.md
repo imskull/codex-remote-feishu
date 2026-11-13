@@ -1,8 +1,8 @@
 # Remote Surface 核心状态机
 
 > Type: `general`
-> Updated: `2026-11-12`
-> Summary: Claude resume 显式恢复原生 permission mode，避免 daemon 重启或会话切换后从 auto 回退为逐项确认。
+> Updated: `2026-11-13`
+> Summary: Claude headless 支持原生 /goal，复用 prompt 队列与运行生命周期，保留 Codex Goal RPC 和互锁语义。
 > 1. visible 但 contract mismatch 的 workspace/session 仍然可见，不会再被 `/list`、`/use`、workspace recency、target picker 直接吞掉；
 > 2. 这些 mismatch 候选不会再假装“可直接接管”；
 > 3. detached `/use`、headless exact-thread restore、workspace attach、startup resume、`/mode` backend switch、`/claudeprofile`、`/codexprofile`、`/opencodeprofile` 现在都会统一先判定 `attach visible compatible / reuse managed compatible / restart managed incompatible / fresh-start matching headless / reject`，而不是各自维护平行 continuation；
@@ -1838,6 +1838,14 @@ Feishu 群聊 surface 对 bot 能力设置有额外覆盖规则：`/mode`、prov
 
 群聊 `/workspace detach` 不是上表裸 `/detach` 的 surface-level alias：私聊仍按 surface detach；群聊中它是 room-level workspace clear，只有当前 primary bot 可执行。成功或 room 本来无 workspace 时会 reset 同 room 全部 surface，并让 daemon 清同 room 全部 surface resume target；非 primary 拒绝时不改变 room、sibling surface 或 durable resume target。裸 `/detach` 保持兼容 surface-level detach，不清 room workspace；当 surface 已 detached 但 room 仍绑定 workspace 时，只返回可执行的 `/workspace detach` 提示。
 
+### 6.1.1 Claude 原生 Goal
+
+Claude headless 的 `/goal` 在 help/menu 中可见并允许 passthrough：`/goal <完成条件>` 设置或替换目标，bare `/goal` 查询，`/goal clear` 清除（原生 clear aliases 也直接透传）。Codex 的 `new/edit/pause/resume/--budget` 不映射为 Claude 控制操作。命令使用普通 `prompt.send`，保留原始换行和完成条件；其中 `[什么？]` / `[耸肩摊手]` 视为条件原文，不触发 detour，即使首次启动/重启后的 pending input replay 也保持目标会话；既可发送到当前 selected session，也可作为 `R5 NewThreadReady` 的首条输入。首次启动、route freeze、Profile/access/plan override、断连与错误均沿用普通 prompt 路径；不生成 Codex `thread/goal/*` RPC、不伪造 authoritative ThreadGoal，也不参与 Codex durable Goal queue interlock。
+
+Claude 自己执行 evaluator 与 continuation；synthetic `Goal set` acknowledgement 和中间 assistant message 不结束 remote queue item，只有最终 native `result` 才释放 turn ownership 并继续队列。执行期间的 Goal 查询/修改/清除按普通消息排队；需要立即中断时先 `/stop`，待当前 turn 收尾后再 `/goal clear`。`/stop` 本身不承诺清除原生 Goal；恢复 Goal 的行为由 Claude CLI 管理。
+
+Review/helper 会话拒绝 Goal；存在 pending request / request capture 时拒绝 Goal 命令，避免将命令误消费为反馈；当前用户有 staged image/file 时拒绝并保留附件，提示先发送或撤回，以保证送入 Claude 的内容仍是完整原生 slash command。权限策略保持当前 Claude 会话设置。CLI 不支持 Goal、hooks 禁用或其他原生失败通过现有 assistant/result 与失败提示回显，不建立额外持久化状态。验证版本：Claude Code 2.1.322，stream-json 的查询与完整 evaluator loop 均已实测。
+
 ### 6.2 覆盖门禁
 
 | 覆盖状态 | 当前行为 |
@@ -2080,7 +2088,7 @@ retained-offline overlay 额外规则：
 
 2026-08-15 #897 补充：`/access` 与 `/plan` 改为会话级（surface 级）设置。飞书群聊与私聊各自独立持久化（surface resume state 新增 `AccessMode`，恢复 `PlanMode`/`PlanModeOverrideSet`），群聊可直接执行这两个命令，不再被“机器人设置仅私聊可改”的 gate 拦截；`EffectiveSurfaceCapabilitySettings` 对飞书 surface 的 access/plan 读 surface 字段，bot record 投影不再覆盖会话值。旧版机器人级 access/plan 在 daemon 启动恢复时一次性种子到已存在 surface 后不再作为读路径。`/mode`、profile、`/model`、`/reasoning` 仍为机器人级（仅私聊可改）。
 
-2026-08-15 #896 补充：Codex Goal 用户控制面已接入现有命令卡体系。`/goal` 是 config-flow slash command（复用 `FeishuCatalogConfigView` / `FeishuPageView` / 菜单三态 / owner card 状态机）：bare `/goal` 发 `thread/goal/get`（`user_control` provenance）并回显 Goal 状态页；`/goal new|edit <目标> [--budget N]` 创建/编辑，`/goal pause|resume` 动态生效，`/goal clear` 先出确认卡、`--confirm` 后清除；无精确 selected thread / 非 Codex / Review/helper 会话 fail closed。用户动作携带 `user_control`，会撤销 queue interlock 的自动恢复所有权；状态页通过现有 `pageEvent` inline replace 刷新，不新建第二套卡片 carrier。
+2026-08-15 #896 补充：Codex Goal 用户控制面已接入现有命令卡体系。`/goal` 是 config-flow slash command（复用 `FeishuCatalogConfigView` / `FeishuPageView` / 菜单三态 / owner card 状态机）：bare `/goal` 发 `thread/goal/get`（`user_control` provenance）并回显 Goal 状态页；`/goal new|edit <目标> [--budget N]` 创建/编辑，`/goal pause|resume` 动态生效，`/goal clear` 先出确认卡、`--confirm` 后清除；Codex 路径无精确 selected thread / Review/helper 会话 fail closed；Claude 路径见 6.1.1。用户动作携带 `user_control`，会撤销 queue interlock 的自动恢复所有权；状态页通过现有 `pageEvent` inline replace 刷新，不新建第二套卡片 carrier。
 
 2026-08-15 #896 review 修复补充：确认卡/编辑表单打开时在服务端暂存当前 thread 的 Goal fingerprint（createdAt/objective/budget），执行 `clear --confirm` / `new|edit` 前先与最新 thread Goal 比对，漂移则取消操作并出错误卡，避免外部 mutation 窗口内的误清/误改；goal 命令 dispatch 失败会清理 pending `goalUserCommands` 并回错误卡，不再静默丢弃；卡片入口触发的 loading 与结果卡通过 `MessageID + Patchable` 在同一 message 上 patch，不残留无按钮死卡；错误卡复用 config 命令 builder（非 sealed），失败原因不伪装成 no-goal 状态。
 

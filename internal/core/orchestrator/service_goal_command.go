@@ -34,10 +34,13 @@ type goalFingerprint struct {
 const goalPendingFingerprintTTL = 10 * time.Minute
 
 func (s *Service) handleGoalCommand(surface *state.SurfaceConsoleRecord, action control.Action) []eventcontract.Event {
+	if s.surfaceIsHeadless(surface) && s.surfaceBackend(surface) == agentproto.BackendClaude {
+		return s.handleClaudeGoalCommand(surface, action)
+	}
 	if !s.surfaceIsHeadless(surface) || s.surfaceBackend(surface) != agentproto.BackendCodex {
 		return s.inlineCommandCardEvents(surface, action, control.FeishuCatalogConfigView{
 			StatusKind: "error",
-			StatusText: "Goal 只支持 Codex headless 模式，请先 `/mode codex`。",
+			StatusText: "Goal 支持 Codex/Claude headless 模式，请先 `/mode codex` 或 `/mode claude`。",
 		})
 	}
 	threadID := strings.TrimSpace(surface.SelectedThreadID)

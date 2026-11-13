@@ -33,6 +33,13 @@ type detourDirective struct {
 
 func (s *Service) resolveDetourDirective(surface *state.SurfaceConsoleRecord, inst *state.InstanceRecord, text string) (detourDirective, string) {
 	text = strings.TrimSpace(text)
+	// Native Claude Goal conditions are opaque command arguments, including
+	// when a pending first prompt is replayed after a headless launch/restart.
+	if s.surfaceBackend(surface) == agentproto.BackendClaude {
+		if action, ok := control.ParseFeishuTextActionWithoutCatalog(text); ok && action.Kind == control.ActionGoalCommand {
+			return detourDirective{CleanText: text}, ""
+		}
+	}
 	hasFork := strings.Contains(text, detourTriggerForkText)
 	hasBlank := strings.Contains(text, detourTriggerBlankText)
 	if !hasFork && !hasBlank {
